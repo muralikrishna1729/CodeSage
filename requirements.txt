@@ -1,0 +1,23 @@
+certifi==2026.7.22
+charset-normalizer==3.5.1
+gitdb==4.0.12
+GitPython==3.1.61
+idna==3.19
+requests==2.34.2
+pydantic-settings
+smmap==5.0.3
+urllib3==2.7.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+qdrant-client==1.19.0
+langgraph==1.2.11
+duckduckgo-search==8.1.1
+tree-sitter==0.26.0
+tree-sitter-python==0.25.0
+tree-sitter-javascript==0.25.0
+tree-sitter-java==0.23.5
+pytest==9.1.1
+ipykernel==7.3.0
+--index-url https://download.pytorch.org/whl/cpu
+torch
+sentence-transformers
