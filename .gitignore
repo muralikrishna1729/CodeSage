@@ -19,5 +19,5 @@ qdrant_data/
 # Cloned repos used as ingest sources
 repos/
 
-# Explorer / export artifacts
-Plan/*.zip
+# Internal planning/exploration notes (never pushed)
+Plan/
