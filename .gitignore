@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Sentence-transformers model cache
+.model_cache/
+.cache/
+
+# Qdrant vector store data
+qdrant_data/
+
+# Cloned repos used as ingest sources
+repos/
+
+# Explorer / export artifacts
+Plan/*.zip
