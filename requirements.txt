@@ -12,12 +12,12 @@ uvicorn[standard]==0.52.4
 qdrant-client==1.19.0
 langgraph==1.2.11
 duckduckgo-search==8.1.1
-tree-sitter==0.26.0
+tree-sitter==0.25.0
 tree-sitter-python==0.25.0
 tree-sitter-javascript==0.25.0
 tree-sitter-java==0.23.5
 pytest==9.1.1
 ipykernel==7.3.0
---index-url https://download.pytorch.org/whl/cpu
+streamlit==1.63.0
 torch
 sentence-transformers
