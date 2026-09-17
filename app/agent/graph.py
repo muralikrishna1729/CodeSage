@@ -58,8 +58,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--question", required=True)
+    parser.add_argument("--repo_name", default="support-ticket-ai")
     args = parser.parse_args()
-    result = agent_graph.invoke({"question": args.question})
+    result = agent_graph.invoke({"question": args.question, "repo_name": args.repo_name})
     print(f"\nRoute path led to source: {result['source']}")
     print(f"\nAnswer:\n{result['answer']}")
 

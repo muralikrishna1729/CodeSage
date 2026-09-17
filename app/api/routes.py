@@ -10,9 +10,9 @@ sys.path.insert(
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from app.ingestion.clone import clone_repo, get_repo_name
-from app.ingestion.chunker import chunk_repo
-from app.ingestion.embed_store import store_chunks
+from pathlib import Path
+from app.ingestion.clone import get_repo_name
+from app.ingestion.embed_store import ingest_repo
 from app.agent.graph import agent_graph
 
 app = FastAPI(title="Agentic Codebase RAG Assistant")
@@ -25,32 +25,70 @@ class IngestResponse(BaseModel):
     repo_name:str 
     chunks_stored: int 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
     question:str 
+    repo_name: str
+    history: list[ChatMessage] = []
+
+
 
 class ChatResponse(BaseModel):
     answer:str 
     source:str
 
+class DebugChatResponse(BaseModel):
+    route: str
+    kb_grade: str | None = None
+    web_grade: str | None = None
+    answer: str
+    source: str
+
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest):
+    try:
+        result = agent_graph.invoke({
+            "question": req.question,
+            "repo_name": req.repo_name,
+            "history": [h.model_dump() for h in req.history],
+        })        
+        return ChatResponse(answer=result["answer"], source=result["source"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/debug", response_model=DebugChatResponse)
+
+def chat_debug(req: ChatRequest):
+    result = agent_graph.invoke({
+        "question": req.question,
+        "repo_name": req.repo_name,
+        "history": [h.model_dump() for h in req.history],
+    })
+    return DebugChatResponse(**{k: result.get(k) for k in DebugChatResponse.model_fields})
+
 @app.post("/ingest", response_model=IngestResponse)
 def ingest(req:IngestRequest):
     try:
-        local_path = clone_repo(req.repo_url, force= req.force)
-        repo_name = get_repo_name(req.repo_url)
-        chunks = chunk_repo(local_path)
-        n = store_chunks(chunks, repo_name = repo_name)
+        # Derive the repo name the same way ingest_repo's payloads will, so the
+        # response matches what's actually stored.
+        if "://" in req.repo_url or req.repo_url.startswith("git@"):
+            repo_name = get_repo_name(req.repo_url)
+        else:
+            repo_name = Path(req.repo_url).resolve().name
+        # Full pipeline: clean clone (URLs) -> chunk -> delete stale points ->
+        # store chunks -> store REPO_MAP structural context.
+        n = ingest_repo(req.repo_url, force=req.force, repo_name=repo_name)
         return IngestResponse(repo_name=repo_name,chunks_stored=n)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    try:
-        result = agent_graph.invoke({"question": req.question})
-        return ChatResponse(answer=result["answer"], source=result["source"])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

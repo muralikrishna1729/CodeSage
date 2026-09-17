@@ -36,7 +36,7 @@ def find_key_files(repo_path:str) -> dict:
     for name in key_names:
         matches = list(root.rglob(name))
         if matches:
-            found_files[name] = str(matches[0].read_text(errors="ignore")[:3000])  # Read first 3000 chars to avoid huge files
+            found_files[name] = str(matches[0].read_text(errors="ignore")[:800])  # 800 chars each keeps the REPO_MAP chunk (~1.2k tokens) small enough for free-tier LLM token-per-minute limits
     return found_files
 
 
@@ -65,3 +65,8 @@ if __name__== "__main__":
     repo_map = build_repo_map(args.repo_path)
     print("\nRepository Map:")
     print(repo_map)
+
+
+
+
+    

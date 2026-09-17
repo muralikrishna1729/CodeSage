@@ -3,6 +3,7 @@ from typing import TypedDict, Optional
 
 class AgentState(TypedDict):
     question: str
+    repo_name: str
     route: Optional[str]              # "kb" | "web" | "direct"
     kb_results: Optional[list[dict]]
     kb_grade: Optional[str]           # "good" | "weak"

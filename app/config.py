@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
+    qdrant_api_key: str = ""   # only needed for Qdrant Cloud
+    qdrant_https: bool = False # set true for Qdrant Cloud / TLS endpoints
     embed_model: str = "all-MiniLM-L6-v2"
     collection_name: str = "codebase_chunks"
     groq_model: str = "openai/gpt-oss-120b"

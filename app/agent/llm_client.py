@@ -14,6 +14,9 @@ class RateLimitError(Exception):
     pass
 
 
+RATE_LIMIT_RETRY_BACKOFF = 25  # seconds; free-tier TPM windows reset within 60s
+
+
 class LLMClient:
     def __init__(self):
         self.groq_url = "https://api.groq.com/openai/v1/chat/completions"
@@ -58,16 +61,31 @@ class LLMClient:
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
     def chat(self, messages: list, temperature: float = 0.2) -> str:
+        last_rate_limited = None
         for name, fn in [("groq", self._call_groq), ("openrouter", self._call_openrouter), ("gemini", self._call_gemini)]:
             try:
                 return fn(messages, temperature)
             except RateLimitError:
+                last_rate_limited = (name, fn)
                 print(f"[llm_client] {name} rate-limited, falling back...")
                 time.sleep(1)
                 continue
             except requests.HTTPError as e:
                 print(f"[llm_client] {name} failed: {e}, falling back...")
                 continue
+        # Every provider failed. If the last failure was a rate limit (not an
+        # auth error), the quota window typically resets within a minute —
+        # wait once and retry that provider before surfacing the failure.
+        if last_rate_limited is not None:
+            name, fn = last_rate_limited
+            print(f"[llm_client] all providers exhausted; retrying {name} once after {RATE_LIMIT_RETRY_BACKOFF}s backoff...")
+            time.sleep(RATE_LIMIT_RETRY_BACKOFF)
+            try:
+                return fn(messages, temperature)
+            except RateLimitError:
+                print(f"[llm_client] {name} still rate-limited after backoff, giving up")
+            except requests.HTTPError as e:
+                print(f"[llm_client] {name} failed: {e}, giving up")
         raise RuntimeError("All LLM providers failed or rate-limited")
 
 
