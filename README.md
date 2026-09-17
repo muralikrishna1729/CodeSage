@@ -87,7 +87,7 @@ from KB            │
 | Code parsing | tree-sitter | AST-aware chunking (Python, JS/TS) |
 | Orchestration | LangGraph | Router → grade → generate state machine |
 | Backend | FastAPI | `/ingest`, `/chat`, `/chat/debug` endpoints |
-| Frontend | Chainlit | Chat UI with visible agent reasoning steps |
+| Frontend | Streamlit | Chat UI with visible agent reasoning steps |
 | Code execution sandbox | Docker (network-isolated, resource-capped) | Verifies agent's code explanations |
 | Eval | RAGAS | Faithfulness + answer relevancy scoring |
 
@@ -118,7 +118,7 @@ codebase-rag-agent/
 │   ├── api/
 │   │   └── routes.py
 │   └── frontend/
-│       └── chainlit_app.py
+│       └── streamlit_app.py
 └── eval/
     ├── eval_dataset.py
     └── run_eval.py
@@ -129,7 +129,7 @@ codebase-rag-agent/
 ## Setup
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.13 (required — see the version note under Install)
 - Docker (for Qdrant and the code-execution sandbox)
 - Free API keys: [Groq](https://console.groq.com), [OpenRouter](https://openrouter.ai),
   [Google AI Studio / Gemini](https://aistudio.google.com), [Tavily](https://tavily.com)
@@ -140,26 +140,86 @@ git clone <this-repo-url>
 cd codebase-rag-agent
 
 docker compose up -d              # starts Qdrant on localhost:6333
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 cp .env.example .env              # fill in your free API keys
 ```
 
+> **Python version note:** use Python 3.13. The pinned `tree-sitter==0.25.0`
+> has no prebuilt wheel for Python 3.14, and the source build needs MSVC —
+> on 3.14 pip silently falls back to tree-sitter 0.26.x, which native-crashes
+> (0xC0000005) with the 0.25.x grammar packages during AST chunking.
+
 ### Run
 ```bash
-uvicorn app.api.routes:app --reload            # terminal 1 — backend
-chainlit run app/frontend/chainlit_app.py -w   # terminal 2 — frontend
+uvicorn app.api.routes:app --reload --port 8010   # terminal 1 — backend
+streamlit run app/frontend/streamlit_app.py       # terminal 2 — frontend
 ```
 
-Open the Chainlit UI (usually `http://localhost:8000` for the app, check
-terminal output for the exact URL) and paste a public GitHub repo URL to
-begin.
+Open the Streamlit UI at `http://localhost:8501`, paste a public GitHub repo
+URL in the sidebar to ingest it, then ask questions in the chat box. The
+frontend talks to the backend at `http://localhost:8010` by default; override
+with the `API_URL` environment variable if the backend runs elsewhere.
+
+---
+
+## Deployment
+
+The app has three moving parts: the FastAPI backend (:8010), the Streamlit
+frontend (:8501), and Qdrant (:6333). The repo ships a single `Dockerfile`
+(one image serves both backend and frontend) and `docker-compose.prod.yml`
+that wires all three together with persistent volumes for Qdrant storage and
+cloned repos. The Qdrant connection is fully env-driven (`QDRANT_HOST`,
+`QDRANT_PORT`, `QDRANT_API_KEY`, `QDRANT_HTTPS`), so the same code targets a
+local dev stack, the compose network, or Qdrant Cloud.
+
+### Option A — one VM with Docker (recommended)
+
+Works on any cloud VM (DigitalOcean, Hetzner, AWS EC2, Oracle free tier) or a
+homelab box. 2 GB RAM is the practical minimum (torch + Qdrant).
+
+```bash
+# on the VM, with Docker + git installed
+git clone <this-repo-url> && cd codebase-rag-agent
+cp .env.example .env            # fill in your free API keys
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+- Streamlit UI: `http://<vm-ip>:8501`
+- FastAPI docs: `http://<vm-ip>:8010/docs`
+- Put a reverse proxy (Caddy/nginx) in front for HTTPS, and firewall port
+  8010 if only the UI should be reachable.
+- Qdrant data and cloned repos persist in the `qdrant_data` / `repos_data`
+  volumes across restarts and redeploys.
+
+### Option B — Render / Railway (managed, no VM) + Qdrant Cloud
+
+1. Create a free Qdrant Cloud cluster and copy its **URL** and **API key**.
+2. Create a Web Service from the repo (Docker runtime — the same
+   `Dockerfile` builds there). Set env vars:
+
+   | Var | Value |
+   |---|---|
+   | `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `TAVILY_API_KEY` | your keys |
+   | `QDRANT_HOST` | full cluster URL, e.g. `https://xyz.eu-central.aws.qdrant.io:6333` |
+   | `QDRANT_API_KEY` | the cluster API key |
+   | `REPOS_DIR` | `/tmp/repos` (writable scratch disk) |
+
+3. Deploy the Streamlit frontend as a second service with `API_URL` pointing
+   at the backend service URL.
+
+Note: the Docker-sandboxed code-execution tool (`app/tools/code_exec.py`) is
+defined but not wired into the agent graph, so no Docker socket is needed in
+deployment. If you wire it in later, the sandbox requires a host with a real
+Docker daemon (Option A with `/var/run/docker.sock` mounted into the backend
+container) — it will not work on Render/Railway/Fly.
 
 ---
 
 ## Demo script
 
-1. **Ingest a repo** — paste a public GitHub URL in the chat. Watch the
-   "Ingesting repo" step complete with a chunk count.
+1. **Ingest a repo** — paste a public GitHub URL in the Streamlit sidebar and
+   click Ingest. Watch the spinner complete with a chunk count.
 2. **Ask a KB-eligible question** — e.g. "How does the router decide where
    to send a question?" (if you've ingested this repo itself). Confirm the
    answer cites a real `file_path:line`.
@@ -168,8 +228,8 @@ begin.
 4. **Ask a nonsense question** — confirm it lands on the honest fallback
    answer rather than confidently hallucinating.
 5. Point out the visible reasoning steps (routing decision, grading
-   verdicts) in the Chainlit UI throughout — this transparency is the core
-   differentiator from a plain RAG chatbot.
+   verdicts) in the Streamlit captions throughout — this transparency is the
+   core differentiator from a plain RAG chatbot.
 
 ---
 
@@ -198,6 +258,14 @@ investigating.
 - **Corrective RAG (grading step)** — retrieval isn't trusted blindly; an
   LLM-as-judge checks whether retrieved context actually answers the
   question before generating, falling back to web search when it doesn't.
+- **Score-based grading fast-path with a repo-map carve-out** — very high or
+  very low similarity scores short-circuit the LLM grader to save free-tier
+  calls, but the carve-out is deliberately narrow: when a repo-map chunk was
+  retrieved, low code-chunk scores do *not* condemn the retrieval (broad
+  project-level questions always score low against per-function chunks — the
+  scores are structurally incomparable), so the LLM grader judges the
+  repo-map-grounded context instead. Code-only questions keep the instant
+  fast paths.
 - **Free-tier provider fallback cascades** — both the LLM client and web
   search tool try a primary free provider and fall through to a secondary
   on rate-limit or failure, keeping the whole stack at zero cost without
@@ -213,7 +281,14 @@ investigating.
 - Multi-turn conversation context is not yet wired end-to-end — verify
   whether `/chat` uses prior message history or treats every question
   statelessly before claiming this in an interview.
-- The ingest-vs-chat routing in the Chainlit frontend uses a crude
-  URL-prefix heuristic rather than a dedicated ingest flow.
+- The Streamlit sidebar's ingest flow is a simple URL + Ingest button; there
+  is no dedicated multi-step ingest wizard or per-repo collection switching.
+- Retrieval is repo-scoped: every KB query filters on the ingested repo, and
+  re-ingesting a repo replaces its own chunks (stale points deleted) while
+  the repo-map context stays repo-current. The token budgeter
+  (`build_context_text`) stops at the first chunk that would overflow the
+  4k-token budget instead of partially filling it — fine at `KB_TOP_K=3`
+  with the capped repo-map, but adversarially token-dense chunks could nudge
+  the assembled context over budget.
 - Class-level chunking captures an entire class as one chunk rather than
   per-method — worth revisiting if large classes hurt retrieval precision.
