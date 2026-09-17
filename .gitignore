@@ -21,3 +21,13 @@ repos/
 
 # Internal planning/exploration notes (never pushed)
 Plan/
+# Chainlit dedicated venv (3.13)
+.venv-chainlit/
+
+
+# Service logs
+*.log
+# Personal notes & chat exports (never pushed)
+interview_prep.md
+Claude-Codesage project overview.md
+Codesage project Build  Guide.md
