@@ -1,9 +1,14 @@
+import os
 import shutil
 from pathlib import Path
 from git import Repo
 import argparse
 
-CLONE_BASE_DIR = Path("./repos")
+# Clone target lives OUTSIDE the project root on purpose: dev servers that
+# watch the project tree for changes (uvicorn --reload, `chainlit -w`) would
+# otherwise detect the cloned source files and restart mid-request, killing
+# the in-flight /ingest call. Override with the REPOS_DIR env var.
+CLONE_BASE_DIR = Path(os.environ.get("REPOS_DIR", Path.home() / ".codebase-rag-agent" / "repos"))
 
 def clone_repo(repo_url:str, force:bool = False)->Path:
     """

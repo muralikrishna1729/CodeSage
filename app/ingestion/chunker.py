@@ -46,36 +46,45 @@ def _get_parser_and_lang(file_path: str) -> tuple[Parser, str] | tuple[None, Non
     return None, None # for anythig else like README.md, .txt, .json, .yml, .csv, etc. we will ignore for now
 
 def extract_imports(root_node, source:bytes, lang:str) -> list[str]:
+    """Collect import statements via ITERATIVE preorder DFS.
+
+    A recursive walk segfaults (0xC0000005) on deeply-nested trees (minified
+    JS, huge literals): the C stack is exhausted before Python's recursion
+    limit trips, and the process dies with no traceback. An explicit stack
+    cannot overflow the C stack.
+    """
     imports = []
     target_types = IMPORT_NODE_TYPES.get(lang, set())
-
-    def walk_node(node):
+    stack = [root_node]
+    while stack:
+        node = stack.pop()
         if node.type in target_types:
             import_text = source[node.start_byte:node.end_byte].decode(errors = "ignore").strip()
             imports.append(import_text)
-        for child in node.children:
-            walk_node(child)
-    walk_node(root_node)
+        # reversed() so children pop in original (preorder) order
+        stack.extend(reversed(node.children))
     return imports
 
 
 def extract_chunks(root_node, source:bytes, file_path:str, imports:list[str]):
+    """Collect function/class chunks via ITERATIVE preorder DFS (see
+    extract_imports for why this must not be recursive)."""
     chunks = []
-    def walk_node(node):
+    stack = [root_node]
+    while stack:
+        node = stack.pop()
         if node.type in FUNCTION_NODE_TYPES:
             name_node = next((c for c in node.children if c.type in ("identifier", "property_identifier", "constructor")), None) # iterator, load each one by one.
-            name = name_node.text.decode(errors="ignore").strip() if name_node else "anonymous"
+            name = source[name_node.start_byte:name_node.end_byte].decode(errors="ignore").strip() if name_node else "anonymous"
             start_line = node.start_point.row + 1 # Point.row is 0-based; convert to 1-based line number
             end_line = node.end_point.row + 1
             content = source[node.start_byte:node.end_byte].decode(errors="ignore").strip()
             chunks.append(CodeChunk(file_path=file_path, function_name=name, start_line=start_line, end_line=end_line, content=content, imports=imports))
 
-            return # we don't need to go deeper into this function/class node, as we already captured it
+            continue # we don't need to go deeper into this function/class node, as we already captured it
 
-        
-        for child in node.children:
-            walk_node(child)
-    walk_node(root_node)
+        # reversed() so children pop in original (preorder) order
+        stack.extend(reversed(node.children))
     return chunks
 
 
