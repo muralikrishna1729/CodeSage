@@ -24,7 +24,7 @@ COPY app/ app/
 
 # Bake the embedding model into the image so the first /ingest works even
 # without Hugging Face access at runtime.
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/app/ingestion/.model_cache')"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('jinaai/jina-embeddings-v2-base-code', trust_remote_code=True, cache_folder='/app/app/ingestion/.model_cache')"
 
 EXPOSE 8010 8501
 

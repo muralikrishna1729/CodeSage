@@ -4,13 +4,16 @@ from typing import TypedDict, Optional
 class AgentState(TypedDict):
     question: str
     repo_name: str
-    route: Optional[str]              # "kb" | "web" | "direct"
+    history: Optional[list[dict]]          # [{"role": "user"|"assistant", "content": "..."}]
+    rewritten_question: Optional[str]     # Standalone expanded query for retrieval
+    route: Optional[str]                  # "kb" | "web" | "direct"
     kb_results: Optional[list[dict]]
-    kb_grade: Optional[str]           # "good" | "weak"
+    kb_grade: Optional[str]               # "good" | "weak"
     web_results: Optional[list[dict]]
-    web_grade: Optional[str]          # "good" | "weak"
+    web_grade: Optional[str]              # "good" | "weak"
     answer: Optional[str]
-    source: Optional[str]             # "kb" | "web" | "fallback" | "direct"
+    source: Optional[str]                 # "kb" | "web" | "fallback" | "direct"
+
 
 if __name__ == "__main__":
     sample: AgentState = {

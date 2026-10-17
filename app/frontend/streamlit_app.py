@@ -1,11 +1,25 @@
 import os
+import time
 import streamlit as st
 import requests
 
 # Backend URL. Port 8000 is contended on this machine, so default to 8010.
 # Override with the API_URL env var if the backend moves again.
 API_URL = os.getenv("API_URL", "http://localhost:8010")
-REQUEST_TIMEOUT = 120  # ingest (clone+chunk+embed) and retrying LLM calls can exceed 30s
+REQUEST_TIMEOUT = 120     # chat: retrying/backing-off LLM calls can take a while
+CONTROL_TIMEOUT = 30      # ingest accept/status + repo list: small control-plane calls
+POLL_INTERVAL = 2         # seconds between /ingest/status polls
+
+
+@st.cache_data(ttl=15)  # avoid re-hitting /repos (and a 30s stall if the backend is down) on every rerun
+def fetch_indexed_repos() -> list:
+    """Repos already stored in Qdrant (GET /repos); [] if the backend is unreachable."""
+    try:
+        resp = requests.get(f"{API_URL}/repos", timeout=CONTROL_TIMEOUT)
+        return resp.json() if resp.status_code == 200 else []
+    except requests.RequestException:
+        return []
+
 
 st.set_page_config(page_title="Codebase RAG Assistant", layout="wide")
 st.title("Agentic Codebase RAG Assistant")
@@ -21,19 +35,65 @@ with st.sidebar:
     st.subheader("Ingest a repo")
     repo_url = st.text_input("GitHub repo URL")
     if st.button("Ingest") and repo_url:
-        with st.spinner("Cloning, chunking, embedding..."):
-            try:
-                resp = requests.post(
-                    f"{API_URL}/ingest", json={"repo_url": repo_url}, timeout=REQUEST_TIMEOUT
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    st.session_state.active_repo = data["repo_name"]  # remember for questions
-                    st.success(f"Indexed {data['chunks_stored']} chunks from {data['repo_name']}")
-                else:
-                    st.error(f"Ingestion failed ({resp.status_code}): {resp.text}")
-            except requests.RequestException as e:
-                st.error(f"Could not reach backend at {API_URL}: {e}")
+        try:
+            # Ingestion runs for minutes on a real repo (CPU embedding of every
+            # chunk), so the backend accepts it as a background job and we poll
+            # for its stage. One long blocking request used to die at the 120s
+            # read timeout while the server was still embedding: the repo got
+            # indexed anyway, but this session never learned the repo name.
+            accepted = requests.post(
+                f"{API_URL}/ingest/async", json={"repo_url": repo_url}, timeout=CONTROL_TIMEOUT
+            )
+            if accepted.status_code != 202:
+                st.error(f"Ingestion failed ({accepted.status_code}): {accepted.text}")
+            else:
+                job = accepted.json()
+                started = time.time()
+                with st.status(f"Indexing {job['repo_name']}...", expanded=True) as status:
+                    while True:
+                        poll = requests.get(
+                            f"{API_URL}/ingest/status/{job['job_id']}", timeout=CONTROL_TIMEOUT
+                        )
+                        if poll.status_code != 200:
+                            status.update(
+                                label=f"Ingest job not found ({poll.status_code}) — check 'Already indexed' below.",
+                                state="error",
+                            )
+                            break
+                        snap = poll.json()
+                        elapsed = int(time.time() - started)
+                        if snap["status"] == "done":
+                            st.session_state.active_repo = job["repo_name"]
+                            fetch_indexed_repos.clear()  # drop the cached list so the new repo shows up
+                            status.update(
+                                label=f"Indexed {snap['chunks_stored']} chunks from {job['repo_name']} in {elapsed}s",
+                                state="complete",
+                            )
+                            break
+                        if snap["status"] == "error":
+                            status.update(label=f"Ingestion failed: {snap['error']}", state="error")
+                            break
+                        status.update(label=f"{job['repo_name']}: {snap['stage']} ({elapsed}s)")
+                        time.sleep(POLL_INTERVAL)
+        except requests.RequestException as e:
+            st.error(f"Could not reach backend at {API_URL}: {e}")
+
+    # Already-indexed repos: adopt one without re-ingesting. Also the recovery
+    # path when an ingest finished but this session lost the repo name (page
+    # reload, backend restart, or a request the client abandoned).
+    indexed = fetch_indexed_repos()
+    if indexed:
+        names = [r["repo_name"] for r in indexed]
+        current = st.session_state.active_repo
+        picked = st.selectbox(
+            "Already indexed",
+            names,
+            index=names.index(current) if current in names else 0,
+            help="Reuse a repo that's already in Qdrant — no re-ingest needed.",
+        )
+        if st.button("Use this repo"):
+            st.session_state.active_repo = picked
+        st.caption("Indexed: " + ", ".join(f"{r['repo_name']} ({r['points']} pts)" for r in indexed))
 
     if st.session_state.active_repo:
         st.caption(f"Active repo: **{st.session_state.active_repo}**")

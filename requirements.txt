@@ -5,12 +5,14 @@ GitPython==3.1.61
 idna==3.19
 requests==2.34.2
 pydantic-settings
+python-dotenv
 smmap==5.0.3
 urllib3==2.7.0
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 qdrant-client==1.19.0
 langgraph==1.2.11
+langsmith>=0.1.0
 duckduckgo-search==8.1.1
 tree-sitter==0.25.0
 tree-sitter-python==0.25.0
@@ -21,3 +23,4 @@ ipykernel==7.3.0
 streamlit==1.63.0
 torch
 sentence-transformers
+einops

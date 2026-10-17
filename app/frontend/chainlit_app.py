@@ -1,5 +1,7 @@
 # app/frontend/chainlit_app.py
 import os
+import time
+import asyncio
 import chainlit as cl
 import requests
 
@@ -8,7 +10,9 @@ import requests
 # then drops it -> RemoteDisconnected), so default to 8010. Override with the
 # API_URL env var if the backend moves again.
 API_URL = os.getenv("API_URL", "http://localhost:8010")
-REQUEST_TIMEOUT = 30
+CHAT_TIMEOUT = 120        # /chat/debug can wait out a 25s LLM rate-limit backoff and retry
+CONTROL_TIMEOUT = 30      # ingest accept/status: short control-plane calls
+POLL_INTERVAL = 2         # seconds between /ingest/status polls
 
 
 @cl.on_chat_start
@@ -26,14 +30,41 @@ async def main(message: cl.Message):
     if text.startswith("https://github.com/"):
         async with cl.Step(name="Ingesting repo") as step:
             try:
-                resp = requests.post(
-                    f"{API_URL}/ingest", json={"repo_url": text}, timeout=REQUEST_TIMEOUT
+                # Ingest runs for minutes (CPU embedding of every chunk), so the
+                # backend takes it as a background job and we poll for the stage.
+                # A single long request used to time out while the server was
+                # still embedding — the repo got indexed but the UI never knew.
+                accepted = requests.post(
+                    f"{API_URL}/ingest/async", json={"repo_url": text}, timeout=CONTROL_TIMEOUT
                 )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    step.output = f"Indexed {data['chunks_stored']} chunks from {data['repo_name']}"
+                if accepted.status_code != 202:
+                    step.output = f"Ingestion failed ({accepted.status_code}): {accepted.text}"
                 else:
-                    step.output = f"Ingestion failed ({resp.status_code}): {resp.text}"
+                    job = accepted.json()
+                    started = time.time()
+                    while True:
+                        poll = requests.get(
+                            f"{API_URL}/ingest/status/{job['job_id']}", timeout=CONTROL_TIMEOUT
+                        )
+                        if poll.status_code != 200:
+                            step.output = (
+                                f"Ingest job not found ({poll.status_code}) — the repo may still "
+                                "be indexed; ask a question to check."
+                            )
+                            break
+                        snap = poll.json()
+                        elapsed = int(time.time() - started)
+                        if snap["status"] == "done":
+                            step.output = (
+                                f"Indexed {snap['chunks_stored']} chunks from "
+                                f"{job['repo_name']} in {elapsed}s"
+                            )
+                            break
+                        if snap["status"] == "error":
+                            step.output = f"Ingestion failed: {snap['error']}"
+                            break
+                        step.output = f"{job['repo_name']}: {snap['stage']} ({elapsed}s)"
+                        await asyncio.sleep(POLL_INTERVAL)  # yield to the event loop between polls
             except requests.RequestException as e:
                 step.output = f"Could not reach backend at {API_URL}: {e}"
         return  # step.output already shows the result — no need to also send a Message
@@ -45,7 +76,7 @@ async def main(message: cl.Message):
             resp = requests.post(
                 f"{API_URL}/chat/debug",
                 json={"question": text, "history": history},
-                timeout=REQUEST_TIMEOUT,
+                timeout=CHAT_TIMEOUT,
             )
             if resp.status_code != 200:
                 route_step.output = f"Backend error ({resp.status_code})"
