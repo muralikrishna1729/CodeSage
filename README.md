@@ -43,15 +43,18 @@ The diagram below shows the main request path, repository ingestion components, 
   <img src="assets/architecture.png" alt="CodeSage system architecture" width="100%">
 </p>
 
-<details>
-<summary>View the supplied original architecture diagram</summary>
-<br>
-<p align="center">
-  <img src="assets/architecture-reference.png" alt="Original CodeSage architecture diagram" width="100%">
-</p>
-</details>
+### Agent Decision & Self-Correction Workflow
 
-### Agent decision and self-correction flow
+<p align="center">
+  <img
+    src="assets/Agent Decision and Self-Correction Flow.png"
+    alt="CodeSage agent decision and self-correction workflow"
+    width="100%"
+  />
+</p>
+
+<details>
+<summary>View Mermaid flowchart</summary>
 
 ```mermaid
 flowchart TD
@@ -76,6 +79,8 @@ flowchart TD
     D --> A
     F --> A
 ```
+
+</details>
 
 ### How codebase understanding works
 
