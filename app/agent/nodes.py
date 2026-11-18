@@ -7,6 +7,9 @@ from app.agent.llm_client import llm_client
 from app.ingestion.embed_store import search as kb_search, get_repo_map_chunk
 from app.tools.web_search import web_search_tool
 from app.agent.context_budget import build_context_text
+import time
+from app import metrics
+
 
 KB_TOP_K = 3
 PROJECT_LEVEL_KEYWORDS = [
@@ -88,6 +91,7 @@ Answer:"""
 
 
 def router_node(state: dict) -> dict:
+    t0 = time.perf_counter()
     repo_name = state.get("repo_name", "the active repository")
     prompt = ROUTER_PROMPT.format(repo_name=repo_name, question=state["question"])
     response = llm_client.chat(
@@ -98,9 +102,11 @@ def router_node(state: dict) -> dict:
     route = response.strip().lower()
     if route not in ("kb", "web", "direct"):
         route = "kb"  # safe default — prefer trying the codebase first
+    metrics.record("router", time.perf_counter()- t0)
     return {"route": route}
 
 def rewrite_query_node(state: dict) -> dict:
+    t0 = time.perf_counter()
     question = state["question"]
     repo_name = state.get("repo_name", "the active codebase")
      # Format chat history for context
@@ -123,36 +129,39 @@ def rewrite_query_node(state: dict) -> dict:
         model=settings.groq_fast_model,
     )
     rewritten_query = rewritten.strip().strip('"')
-    
+    metrics.record("rewrite_query", time.perf_counter()- t0)
     return {"rewritten_question": rewritten_query}
-    
+
 
 def _is_project_level_question(question: str) -> bool:
     q = question.lower()
     return any(kw in q for kw in PROJECT_LEVEL_KEYWORDS)
 
 def retrieve_kb_node(state: dict) -> dict:
+    t0 = time.perf_counter()
     repo_name = state["repo_name"]
 
     # Use the rewritten query for vector search, fallback to original question
     search_query = state.get("rewritten_question") or state["question"]
     results = kb_search(search_query, repo_name=repo_name, top_k=KB_TOP_K)
-    
+
     # If the user's question or rewritten query is project-level, prepend the repo map
     if _is_project_level_question(state["question"]) or _is_project_level_question(search_query):
         repo_map_chunk = get_repo_map_chunk(repo_name)
         if repo_map_chunk:
             results = [repo_map_chunk] + results
+    metrics.record("retrieve_kb", time.perf_counter()- t0)
     return {"kb_results": results}
 
 def fallback_node(state: dict) -> dict:
     # If routed as a codebase question, give an informative repo-specific fallback
     # instead of falling back to generic web search or broad hallucinations.
     repo_name = state.get("repo_name", "the project")
-    prompt = FALLBACK_KB_PROMPT.format(repo_name=repo_name, question=state["question"])
-    answer = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.2)
+    with metrics.timer("fallback"):
+        prompt = FALLBACK_KB_PROMPT.format(repo_name=repo_name, question=state["question"])
+        answer = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.2)
     return {"answer": answer, "source": "fallback"}
-    
+
 
 CONTEXT_CHAR_LIMIT = 20000  # ~5k tokens: keeps grade+generate within free-tier TPM budgets
 
@@ -178,7 +187,9 @@ def _format_context(results: list[dict], max_chars: int = CONTEXT_CHAR_LIMIT) ->
 
 KB_GRADE_HIGH_CONFIDENCE = 0.50
 KB_GRADE_LOW_CONFIDENCE = 0.20
+
 def grade_kb_node(state: dict) -> dict:
+    t0 = time.perf_counter()
     # Grade on CODE chunk scores only — the REPO_MAP sentinel is prepended with
     # a synthetic score of 1.0 (no real similarity), which would otherwise make
     # every project-level question auto-pass the confidence shortcut.
@@ -187,6 +198,8 @@ def grade_kb_node(state: dict) -> dict:
     has_repo_map = any(r.get("file_path") == "REPO_MAP" for r in state["kb_results"])
 
     if top_score >= KB_GRADE_HIGH_CONFIDENCE:
+        metrics.record("grade_kb_fast", time.perf_counter() - t0)
+        metrics.record("grade_kb", time.perf_counter() - t0)
         return {"kb_grade": "good"}  # skip the LLM call entirely
     # Only condemn weak code scores when there is no structural context to lean
     # on: broad project-level questions ("what is this project about") always
@@ -194,6 +207,8 @@ def grade_kb_node(state: dict) -> dict:
     # them may well answer the question — let the LLM grader judge that
     # instead of short-circuiting to "weak".
     if top_score <= KB_GRADE_LOW_CONFIDENCE and not has_repo_map:
+        metrics.record("grade_kb_fast", time.perf_counter() - t0)
+        metrics.record("grade_kb", time.perf_counter() - t0)
         return {"kb_grade": "weak"}  # skip the LLM call entirely
     # ambiguous zone — fall through to the actual LLM judgment
     context = build_context_text(state["kb_results"])
@@ -203,25 +218,31 @@ def grade_kb_node(state: dict) -> dict:
     grade = response.strip().lower()
     if grade not in ("good", "weak"):
         grade = "weak"  # safe default — prefer falling back over false confidence
+    metrics.record("grade_kb_llm", time.perf_counter()- t0)
+    metrics.record("grade_kb", time.perf_counter()- t0)
     return {"kb_grade": grade}
 
 def generate_kb_node(state: dict) -> dict:
+    t0 = time.perf_counter()
     context = build_context_text(state["kb_results"])
     prompt = GENERATE_KB_PROMPT.format(question=state["question"], context=context)
     answer = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.2)
+    metrics.record("generate_kb", time.perf_counter()- t0)
     return {"answer": answer, "source": "kb"}
 
 def web_search_node(state: dict) -> dict:
-    results = web_search_tool.search(state["question"], max_results=5)
+    with metrics.timer("web_search"):
+        results = web_search_tool.search(state["question"], max_results=5)
     return {"web_results": results}
 
 def grade_web_node(state: dict) -> dict:
-    context = "\n\n".join(
-        f"{r['title']}\n{r['content']}\n{r['url']}"
-        for r in state["web_results"]
-    )
-    prompt = GRADE_WEB_PROMPT.format(question=state["question"], context=context)
-    response = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.0)
+    with metrics.timer("grade_web"):
+        context = "\n\n".join(
+            f"{r['title']}\n{r['content']}\n{r['url']}"
+            for r in state["web_results"]
+        )
+        prompt = GRADE_WEB_PROMPT.format(question=state["question"], context=context)
+        response = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.0)
     grade = response.strip().lower()
     if grade not in ("good", "weak"):
         grade = "weak"  # safe default — prefer falling back over false confidence
@@ -229,17 +250,20 @@ def grade_web_node(state: dict) -> dict:
 
 
 def generate_web_node(state: dict) -> dict:
+    t0 = time.perf_counter()
     context = "\n\n".join(
         f"{r['title']}\n{r['content']}\n{r['url']}"
         for r in state["web_results"]
     )
     prompt = GENERATE_WEB_PROMPT.format(question=state["question"], context=context)
     answer = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.2)
+    metrics.record("generate_web", time.perf_counter()- t0)
     return {"answer": answer, "source": "web"}
 
 def direct_node(state: dict) -> dict:
-    prompt = DIRECT_PROMPT.format(question=state["question"])
-    answer = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.3)
+    with metrics.timer("direct"):
+        prompt = DIRECT_PROMPT.format(question=state["question"])
+        answer = llm_client.chat([{"role": "user", "content": prompt}], temperature=0.3)
     return {"answer": answer, "source": "direct"}
 
 
