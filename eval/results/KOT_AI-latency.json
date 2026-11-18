@@ -1,0 +1,193 @@
+{
+  "repo": "KOT_AI",
+  "base_url": "http://localhost:8010",
+  "generated_at": "2026-10-22T18:56:04+00:00",
+  "questions": [
+    "How does the agent decide whether to use the web?",
+    "What retrieval strategies are implemented?",
+    "How are documents chunked and embedded?",
+    "What models does the LLM client support?",
+    "How does the API expose chat and ingest endpoints?",
+    "Explain how a B-tree index works"
+  ],
+  "requests": [
+    {
+      "question": "How does the agent decide whether to use the web?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6348.0,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What retrieval strategies are implemented?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5783.5,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "How are documents chunked and embedded?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5583.6,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What models does the LLM client support?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5313.8,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "How does the API expose chat and ingest endpoints?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6196.5,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "Explain how a B-tree index works",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 4781.1,
+      "agent_route": "direct",
+      "kb_grade": null,
+      "web_grade": null,
+      "source": "direct"
+    },
+    {
+      "question": "How does the agent decide whether to use the web?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6478.7,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What retrieval strategies are implemented?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 33648.2,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "How are documents chunked and embedded?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5545.2,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What models does the LLM client support?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6000.7,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "How does the API expose chat and ingest endpoints?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6416.0,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "Explain how a B-tree index works",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 4429.9,
+      "agent_route": "direct",
+      "kb_grade": null,
+      "web_grade": null,
+      "source": "direct"
+    }
+  ],
+  "latency": [
+    {
+      "stage": "router",
+      "count": 12,
+      "p50_ms": 911.3,
+      "p95_ms": 1304.78,
+      "p99_ms": 1476.85
+    },
+    {
+      "stage": "rewrite_query",
+      "count": 10,
+      "p50_ms": 1009.43,
+      "p95_ms": 1174.76,
+      "p99_ms": 1187.4
+    },
+    {
+      "stage": "retrieve_kb",
+      "count": 10,
+      "p50_ms": 74.79,
+      "p95_ms": 97.3,
+      "p99_ms": 107.95
+    },
+    {
+      "stage": "grade_kb",
+      "count": 10,
+      "p50_ms": 0.01,
+      "p95_ms": 0.02,
+      "p99_ms": 0.02
+    },
+    {
+      "stage": "grade_kb_fast",
+      "count": 10,
+      "p50_ms": 0.01,
+      "p95_ms": 0.01,
+      "p99_ms": 0.01
+    },
+    {
+      "stage": "generate_kb",
+      "count": 10,
+      "p50_ms": 1965.58,
+      "p95_ms": 17260.58,
+      "p99_ms": 26939.33
+    },
+    {
+      "stage": "direct",
+      "count": 2,
+      "p50_ms": 1675.11,
+      "p95_ms": 1788.75,
+      "p99_ms": 1798.85
+    },
+    {
+      "stage": "chat_total",
+      "count": 12,
+      "p50_ms": 3850.12,
+      "p95_ms": 16663.7,
+      "p99_ms": 28618.92
+    }
+  ]
+}

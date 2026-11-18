@@ -1,4 +1,4 @@
-# Production stack: Qdrant + FastAPI backend + Streamlit frontend.
+﻿# Production stack: Qdrant + FastAPI backend + Streamlit frontend.
 # Usage:
 #   cp .env.example .env   # fill in your API keys first
 #   docker compose -f docker-compose.prod.yml up -d --build
@@ -6,9 +6,6 @@
 services:
   qdrant:
     image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
@@ -25,7 +22,7 @@ services:
     volumes:
       - repos_data:/data/repos
     ports:
-      - "8010:8010"   # remove if only the frontend should be public
+      - "127.0.0.1:8010:8010"
     depends_on:
       - qdrant
     restart: unless-stopped

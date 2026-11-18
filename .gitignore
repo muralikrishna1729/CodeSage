@@ -31,3 +31,7 @@ Plan/
 interview_prep.md
 Claude-Codesage project overview.md
 Codesage project Build  Guide.md
+
+# Local runtime databases
+tickets.db
+data/*.sqlite3
