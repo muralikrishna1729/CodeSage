@@ -235,7 +235,7 @@ git clone <your-repository-url>
 cd codebase-rag-agent
 cp .env.example .env
 # Add your environment variables
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -p codesage-prod -f docker-compose.prod.yml up -d --build
 ```
 
 Typical local-to-VM service ports from the project configuration:

@@ -1,8 +1,6 @@
-﻿# Production stack: Qdrant + FastAPI backend + Streamlit frontend.
-# Usage:
-#   cp .env.example .env   # fill in your API keys first
-#   docker compose -f docker-compose.prod.yml up -d --build
-# (the dev-only docker-compose.yml that runs just Qdrant is untouched)
+name: codesage-prod
+
+# Production stack: Qdrant + FastAPI backend + Streamlit frontend.
 services:
   qdrant:
     image: qdrant/qdrant:latest
@@ -15,12 +13,13 @@ services:
     command: uvicorn app.api.routes:app --host 0.0.0.0 --port 8010
     env_file: .env
     environment:
-      # real env vars take precedence over the .env file (pydantic-settings)
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       REPOS_DIR: /data/repos
+      JOB_DB_PATH: /app/data/codesage_jobs.sqlite3
     volumes:
       - repos_data:/data/repos
+      - jobs_data:/app/data
     ports:
       - "127.0.0.1:8010:8010"
     depends_on:
@@ -31,8 +30,6 @@ services:
     build: .
     command: streamlit run app/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
     environment:
-      # Streamlit calls the backend server-side (requests), so the internal
-      # compose hostname works — no need to expose the backend publicly.
       API_URL: http://backend:8010
     ports:
       - "8501:8501"
@@ -43,3 +40,4 @@ services:
 volumes:
   qdrant_data:
   repos_data:
+  jobs_data:
