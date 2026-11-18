@@ -1,61 +1,87 @@
-import os
+
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
-# Set the API key in the environment before importing the app so Settings can read it
-os.environ["CODESAGE_API_KEY"] = "test-secret-key"
-from app.api.routes import app  # adjust if your FastAPI app is created elsewhere
 
-client = TestClient(app)
+from app.api import routes
+from app.config import settings
 
-def test_missing_api_key():
-    # No X-API-Key header -> should be 401 (missing key)
-    resp = client.post("/chat", json={"question": "test", "repo_name": "dummy"})
-    assert resp.status_code == 401
-    assert resp.json()["detail"] == "Invalid or missing API key"
 
-def test_invalid_api_key():
-    # Set a correct key in env, then send a wrong key
-    set_api_key("wrong-key")
-    resp = client.post(
-        "/chat",
-        json={"question": "test", "repo_name": "dummy"},
-        headers={"X-API-Key": "not-the-right-key"},
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(settings, "api_key", "test-secret-key")
+    monkeypatch.setattr(routes, "list_ingested_repos", lambda: [])
+
+    return TestClient(routes.app)
+
+
+def test_missing_api_key(client):
+    response = client.get("/repos")
+
+    assert response.status_code == 401
+
+
+def test_invalid_api_key(client):
+    response = client.get(
+        "/repos",
+        headers={"X-API-Key": "wrong-key"},
     )
-    assert resp.status_code == 401
-    assert resp.json()["detail"] == "Invalid or missing API key"
 
-def test_valid_api_key():
-    # Use the key we set in the env
-    resp = client.post(
-        "/chat",
-        json={"question": "test", "repo_name": "dummy"},
+    assert response.status_code == 401
+
+
+def test_valid_api_key(client):
+    response = client.get(
+        "/repos",
         headers={"X-API-Key": "test-secret-key"},
     )
-    # Downstream LLM services are unavailable in this environment, so the call falls back and returns 500
-    assert resp.status_code == 500
 
-def test_invalid_repo_url():
-    set_api_key("test-secret-key")
-    resp = client.post(
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://github.com/owner/repo",
+        "https://gitlab.com/owner/repo",
+        "https://github.com/owner",
+        "https://github.com/owner/repo/extra",
+    ],
+)
+def test_reject_invalid_github_url(url):
+    with pytest.raises(HTTPException) as exc:
+        routes.validate_github_url(url)
+
+    assert exc.value.status_code == 400
+
+
+def test_accept_valid_github_url():
+    routes.validate_github_url(
+        "https://github.com/owner/repo"
+    )
+
+def test_unconfigured_api_key_fails_closed(client, monkeypatch):
+    monkeypatch.setattr(settings, "api_key", "")
+
+    response = client.get("/repos")
+
+    assert response.status_code == 503
+
+
+def test_ingest_endpoint_rejects_invalid_url(client, monkeypatch):
+    def ingestion_must_not_run(*args, **kwargs):
+        raise AssertionError("Ingestion must not run for an invalid URL")
+
+    monkeypatch.setattr(routes, "ingest_repo", ingestion_must_not_run)
+
+    response = client.post(
         "/ingest",
-        json={"repo_url": "http://example.com/owner/repo", "force": False},
+        json={
+            "repo_url": "http://github.com/owner/repo",
+            "force": False,
+        },
         headers={"X-API-Key": "test-secret-key"},
     )
-    # Current implementation returns 500 for unexpected errors; test expects 500
-    assert resp.status_code == 500
-    # Ensure the response contains an error detail (e.g., connection refused)
-    assert "detail" in resp.json()
 
-def test_valid_repo_url():
-    set_api_key("test-secret-key")
-    resp = client.post(
-        "/ingest",
-        json={"repo_url": "https://github.com/owner/repo", "force": False},
-        headers={"X-API-Key": "test-secret-key"},
-    )
-    # Current implementation returns 500 for unexpected errors; test expects 500
-    assert resp.status_code == 500
-    # The response contains an error detail (e.g., connection refused); ensure the detail field exists
-    assert "detail" in resp.json()
-
-def set_api_key(key: str):
-    os.environ["CODESAGE_API_KEY"] = key
+    assert response.status_code == 400

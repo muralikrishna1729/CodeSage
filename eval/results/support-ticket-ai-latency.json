@@ -1,0 +1,214 @@
+{
+  "repo": "support-ticket-ai",
+  "base_url": "http://localhost:8010",
+  "generated_at": "2026-10-22T18:52:19+00:00",
+  "questions": [
+    "How are support tickets categorised into categories?",
+    "What database models are defined for the ticket schema?",
+    "How does the prediction pipeline load and use the trained model?",
+    "Which AWS services are used for storage, email and queues?",
+    "How is the Streamlit app wired to the API routes?",
+    "What is the difference between a binary hash table and a binary tree?"
+  ],
+  "requests": [
+    {
+      "question": "How are support tickets categorised into categories?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6274.8,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What database models are defined for the ticket schema?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5669.7,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "How does the prediction pipeline load and use the trained model?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 8253.4,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "Which AWS services are used for storage, email and queues?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6315.7,
+      "agent_route": "web",
+      "kb_grade": null,
+      "web_grade": "weak",
+      "source": "fallback"
+    },
+    {
+      "question": "How is the Streamlit app wired to the API routes?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5911.5,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What is the difference between a binary hash table and a binary tree?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 4699.0,
+      "agent_route": "direct",
+      "kb_grade": null,
+      "web_grade": null,
+      "source": "direct"
+    },
+    {
+      "question": "How are support tickets categorised into categories?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5704.9,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What database models are defined for the ticket schema?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 5592.7,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "How does the prediction pipeline load and use the trained model?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6799.6,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "Which AWS services are used for storage, email and queues?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 34021.3,
+      "agent_route": "web",
+      "kb_grade": null,
+      "web_grade": "weak",
+      "source": "fallback"
+    },
+    {
+      "question": "How is the Streamlit app wired to the API routes?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 6172.1,
+      "agent_route": "kb",
+      "kb_grade": "good",
+      "web_grade": null,
+      "source": "kb"
+    },
+    {
+      "question": "What is the difference between a binary hash table and a binary tree?",
+      "endpoint": "/chat/debug",
+      "status": 200,
+      "elapsed_ms": 4489.6,
+      "agent_route": "direct",
+      "kb_grade": null,
+      "web_grade": null,
+      "source": "direct"
+    }
+  ],
+  "latency": [
+    {
+      "stage": "router",
+      "count": 12,
+      "p50_ms": 885.19,
+      "p95_ms": 987.86,
+      "p99_ms": 1033.37
+    },
+    {
+      "stage": "rewrite_query",
+      "count": 8,
+      "p50_ms": 1060.78,
+      "p95_ms": 1182.29,
+      "p99_ms": 1205.11
+    },
+    {
+      "stage": "retrieve_kb",
+      "count": 8,
+      "p50_ms": 70.85,
+      "p95_ms": 74.72,
+      "p99_ms": 75.01
+    },
+    {
+      "stage": "grade_kb",
+      "count": 8,
+      "p50_ms": 0.01,
+      "p95_ms": 0.01,
+      "p99_ms": 0.02
+    },
+    {
+      "stage": "grade_kb_fast",
+      "count": 8,
+      "p50_ms": 0.01,
+      "p95_ms": 0.01,
+      "p99_ms": 0.01
+    },
+    {
+      "stage": "web_search",
+      "count": 2,
+      "p50_ms": 1134.51,
+      "p95_ms": 1190.19,
+      "p99_ms": 1195.14
+    },
+    {
+      "stage": "grade_web",
+      "count": 2,
+      "p50_ms": 14944.51,
+      "p95_ms": 27445.32,
+      "p99_ms": 28556.5
+    },
+    {
+      "stage": "generate_kb",
+      "count": 8,
+      "p50_ms": 1910.76,
+      "p95_ms": 3653.77,
+      "p99_ms": 4004.88
+    },
+    {
+      "stage": "fallback",
+      "count": 2,
+      "p50_ms": 1129.99,
+      "p95_ms": 1153.71,
+      "p99_ms": 1155.82
+    },
+    {
+      "stage": "direct",
+      "count": 2,
+      "p50_ms": 1652.79,
+      "p95_ms": 1726.93,
+      "p99_ms": 1733.52
+    },
+    {
+      "stage": "chat_total",
+      "count": 12,
+      "p50_ms": 3968.36,
+      "p95_ms": 17808.91,
+      "p99_ms": 29149.08
+    }
+  ]
+}
