@@ -11,6 +11,7 @@ from app.config import settings
 def client(monkeypatch):
     monkeypatch.setattr(settings, "api_key", "test-secret-key")
     monkeypatch.setattr(routes, "list_ingested_repos", lambda: [])
+    monkeypatch.setattr(routes, "warmup", lambda: 0.0)
 
     return TestClient(routes.app)
 
