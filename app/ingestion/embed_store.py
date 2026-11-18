@@ -1,8 +1,12 @@
 import os
+import time
 import uuid
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
+import inspect
+import threading
+from functools import wraps
 from qdrant_client.models import (
     Distance,
     VectorParams,
@@ -22,12 +26,12 @@ from app.config import settings
 from fastembed import SparseTextEmbedding
 
 try:
-    from .chunker import chunk_repo
-    from .clone import clean_repo, get_repo_name
+    from .chunker import chunk_repo, TokenCounter
+    from .clone import clean_repo, get_repo_name, get_repo_revision
 except ImportError:
     # Support running directly: python app/ingestion/embed_store.py
-    from chunker import chunk_repo
-    from clone import clean_repo, get_repo_name
+    from chunker import chunk_repo, TokenCounter
+    from clone import clean_repo, get_repo_name, get_repo_revision
 
 import transformers.pytorch_utils
 if not hasattr(transformers.pytorch_utils, "find_pruneable_heads_and_indices"):
@@ -41,9 +45,13 @@ if not hasattr(transformers.pytorch_utils, "find_pruneable_heads_and_indices"):
         mask = mask.view(-1).contiguous().eq(1)
         index = torch.arange(len(mask))[mask].long()
         return heads, index
-    transformers.pytorch_utils.find_pruneable_heads_and_indices = _find_pruneable_heads_and_indices
+transformers.pytorch_utils.find_pruneable_heads_and_indices = _find_pruneable_heads_and_indices
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".model_cache")
+
+# One lock per repository. Different repositories can ingest concurrently.
+_REPO_INGEST_LOCKS: dict[str, threading.Lock] = {}
+_REPO_INGEST_LOCKS_GUARD = threading.Lock()
 
 _model = None
 def get_model():
@@ -58,7 +66,6 @@ def get_model():
         _model.max_seq_length = 512  # default 8192 is very slow on CPU
     return _model
 
-
 _sparse_model = None
 def get_sparse_model():
     global _sparse_model
@@ -66,6 +73,33 @@ def get_sparse_model():
         _sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25", cache_dir=CACHE_DIR)
     return _sparse_model
 
+def get_token_counter() -> TokenCounter:
+    """Production token counter using the configured SentenceTransformer model's tokenizer."""
+    model = get_model()
+    tokenizer = model.tokenizer
+
+    def count_tokens(text: str) -> int:
+        if not text:
+            return 0
+        return len(tokenizer.encode(text, add_special_tokens=True))
+
+    return count_tokens
+
+def warmup() -> float:
+    """Load the embedding models and run one dummy encode.
+
+    The first `search()` call otherwise pays the whole SentenceTransformer +
+    BM25 load (~seconds), which lands in the `retrieve_kb` latency samples and
+    makes its p99 meaningless. Calling this at startup keeps the cold-start
+    cost out of the request metrics.
+
+    Returns the number of seconds the warm-up took (0.0 if already warm).
+    """
+    t0 = time.perf_counter()
+    dense = get_model().encode("warmup", normalize_embeddings=True)
+    list(get_sparse_model().embed(["warmup"]))
+    del dense
+    return round(time.perf_counter() - t0, 3)
 
 def _build_client() -> QdrantClient:
     """Build the Qdrant handle from settings instead of hardcoding localhost,
@@ -84,7 +118,6 @@ def _build_client() -> QdrantClient:
     return QdrantClient(**kwargs)
 
 client = _build_client()
-
 
 def _stage(progress, message: str) -> None:
     """Announce a pipeline milestone on stdout and to an optional callback.
@@ -131,7 +164,7 @@ def ensure_collection(name: str):
         except Exception as e:
             print(f"[ingest] Warning checking collection config: {e}")
 
-def store_chunks(chunks, repo_name: str, collection: str = "codebase_chunks", progress=None) -> int:
+def store_chunks(chunks, repo_name: str, collection: str = "codebase_chunks", progress=None, commit_sha: str | None = None,) -> int:
     ensure_collection(collection)
     texts = [c.content if hasattr(c, "content") else c["content"] for c in chunks]
 
@@ -153,6 +186,7 @@ def store_chunks(chunks, repo_name: str, collection: str = "codebase_chunks", pr
         start_line = chunk.start_line if hasattr(chunk, "start_line") else chunk["start_line"]
         end_line = chunk.end_line if hasattr(chunk, "end_line") else chunk["end_line"]
         content = chunk.content if hasattr(chunk, "content") else chunk["content"]
+        parent_symbol = getattr(chunk, "parent_symbol", None) if hasattr(chunk, "parent_symbol") else (chunk.get("parent_symbol") if isinstance(chunk, dict) else None)
 
         point = PointStruct(
             id=str(uuid.uuid4()),
@@ -170,6 +204,8 @@ def store_chunks(chunks, repo_name: str, collection: str = "codebase_chunks", pr
                 "start_line": start_line,
                 "end_line": end_line,
                 "content": content,
+                "parent_symbol": parent_symbol,
+                "commit_sha": commit_sha,
             },
         )
         points.append(point)
@@ -178,11 +214,11 @@ def store_chunks(chunks, repo_name: str, collection: str = "codebase_chunks", pr
     batch_size = 64
     for idx in range(0, len(points), batch_size):
         client.upsert(collection_name=collection, points=points[idx:idx + batch_size])
-    
+
     _stage(progress, f"Upserted {len(points)} points into '{collection}'.")
     return len(points)
 
-def store_repo_map(repo_path: str, repo_name: str, collection: str = "codebase_chunks", progress=None):
+def store_repo_map(repo_path: str, repo_name: str, collection: str = "codebase_chunks", progress=None, commit_sha: str | None = None):
     _stage(progress, "Building REPO_MAP (directory tree + key files) ...")
     repo_map = build_repo_map(repo_path)
     summary_text = "DIRECTORY STRUCTURE:\n" + repo_map["directory_tree"] + "\n\n"
@@ -199,10 +235,12 @@ def store_repo_map(repo_path: str, repo_name: str, collection: str = "codebase_c
             "start_line": 0,
             "end_line": 0,
             "content": summary_text,
+            "parent_symbol": None,
+            "commit_sha": commit_sha,
         },
     )
     client.upsert(collection_name=collection, points=[point])
-    _stage(progress, "Stored REPO_MAP.")
+    _stage(progress, "Stored REPO MAP.")
 
 def get_repo_map_chunk(repo_name: str, collection: str = "codebase_chunks") -> dict | None:
     """
@@ -219,7 +257,7 @@ def get_repo_map_chunk(repo_name: str, collection: str = "codebase_chunks") -> d
 
     Returns:
         A dict shaped like a ``search`` result (with ``content``), or ``None``
-        if no REPO_MAP point has been stored for this collection.
+        if no REPO MAP point has been stored for this collection.
     """
     results = client.scroll(
         collection_name=collection,
@@ -236,9 +274,9 @@ def get_repo_map_chunk(repo_name: str, collection: str = "codebase_chunks") -> d
     return {
         "score": 1.0, "file_path": "REPO_MAP", "function_name": "STRUCTURE",
         "start_line": 0, "end_line": 0, "content": p.payload["content"],
+        "parent_symbol": None,
+        "commit_sha": p.payload.get("commit_sha"),
     }
-
-
 
 def delete_repo_points(repo_name: str, collection: str = "codebase_chunks"):
     """Remove all stored points belonging to a repo so re-ingestion doesn't duplicate."""
@@ -255,7 +293,35 @@ def delete_repo_points(repo_name: str, collection: str = "codebase_chunks"):
         ),
     )
 
+def _serialize_repo_ingestion(func):
+    """Prevent simultaneous ingestion of the same repository."""
 
+    signature = inspect.signature(func)
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        repo_value = str(bound.arguments["repo_url_or_path"]).strip()
+
+        if "://" in repo_value:
+            lock_key = f"github:{get_repo_name(repo_value)}"
+        elif repo_value.startswith("git@"):
+            lock_key = f"git:{repo_value.lower()}"
+        else:
+            lock_key = f"path:{str(Path(repo_value).resolve()).casefold()}"
+
+        with _REPO_INGEST_LOCKS_GUARD:
+            repo_lock = _REPO_INGEST_LOCKS.setdefault(
+                lock_key,
+                threading.Lock(),
+            )
+
+        with repo_lock:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+@_serialize_repo_ingestion
 def ingest_repo(
     repo_url_or_path: str,
     collection: str = "codebase_chunks",
@@ -282,14 +348,34 @@ def ingest_repo(
 
     if "://" in repo_url_or_path or repo_url_or_path.startswith("git@"):
         _stage(progress, f"Cloning {repo_url_or_path} ...")
+        canonical_name = get_repo_name(repo_url_or_path)
+        if repo_name and repo_name.strip().lower() != canonical_name:
+            raise ValueError(
+                f"Repository name mismatch: expected {canonical_name}, got {repo_name}"
+            )
         path = clean_repo(repo_url_or_path, force=force)
-        name = repo_name or get_repo_name(repo_url_or_path)
+        name = canonical_name
     else:
         path = Path(repo_url_or_path).resolve()
         name = repo_name or path.name
 
+    commit_sha = get_repo_revision(path)
+    if commit_sha and not force:
+        indexed_repo_map = get_repo_map_chunk(name, collection)
+        if (
+            indexed_repo_map
+            and indexed_repo_map.get("commit_sha") == commit_sha
+        ):
+            _stage(
+                progress,
+                f"Repository '{name}' is already indexed "
+                f"at commit {commit_sha[:12]}. Skipping ingestion."
+            )
+            return 0
+
     _stage(progress, f"Chunking {path} ...")
-    chunks = chunk_repo(str(path))
+    token_counter = get_token_counter()
+    chunks = chunk_repo(str(path), token_counter=token_counter)
     _stage(progress, f"Extracted {len(chunks)} chunks.")
 
     if not chunks:
@@ -299,20 +385,19 @@ def ingest_repo(
     # Drop any stale points for this repo before storing fresh ones.
     _stage(progress, f"Removing stale points for '{name}' ...")
     delete_repo_points(name, collection)
-    n = store_chunks(chunks, repo_name=name, collection=collection, progress=progress)
+    n = store_chunks(chunks, repo_name=name, collection=collection, progress=progress, commit_sha=commit_sha)
     _stage(progress, f"Stored {n} chunks for repo '{name}' into '{collection}'.")
 
     # Also store the whole-repo map (structure + key files) as a single
     # REPO_MAP point. Done after store_chunks so delete_repo_points above
     # doesn't clear it, and so it can be fetched directly by
     # get_repo_map_chunk() without competing in similarity ranking.
-    store_repo_map(str(path), repo_name=name, collection=collection, progress=progress)
+    store_repo_map(str(path), repo_name=name, collection=collection, progress=progress, commit_sha=commit_sha)
 
     return n
 
-
 def search(query: str, repo_name: str, top_k: int = 5, collection: str = "codebase_chunks"):
-     # 1. Encode query for both models
+    # 1. Encode query for both models
     dense_vec = get_model().encode(query, normalize_embeddings = True).tolist()
     sparse_obj = list(get_sparse_model().embed([query]))[0]
     sparse_vec = SparseVector(
@@ -322,7 +407,7 @@ def search(query: str, repo_name: str, top_k: int = 5, collection: str = "codeba
     # Shared filter to keep repos isolated
     repo_filter = Filter(
         must = [FieldCondition(key="repo", match = MatchValue(value = repo_name))],
-        must_not = [FieldCondition(key = "file_path", match = MatchValue(value= "REPO_MAP"))]
+        must_not = [FieldCondition(key = "file_path", match = MatchValue(value = "REPO_MAP"))]
     )
     response = client.query_points(
         collection_name=collection,
@@ -343,7 +428,7 @@ def search(query: str, repo_name: str, top_k: int = 5, collection: str = "codeba
         query = FusionQuery(fusion=Fusion.RRF),
         limit = top_k
     )
-    
+
     return [
         {
             "score": r.score,
@@ -352,10 +437,11 @@ def search(query: str, repo_name: str, top_k: int = 5, collection: str = "codeba
             "start_line": r.payload["start_line"],
             "end_line": r.payload["end_line"],
             "content": r.payload["content"],
+            "parent_symbol": r.payload.get("parent_symbol"),
+            "commit_sha": r.payload.get("commit_sha"),
         }
         for r in response.points  # query_points returns a QueryResponse, not a list
     ]
-
 
 def list_ingested_repos(collection: str = "codebase_chunks") -> list[dict]:
     """Distinct repos currently indexed in `collection`, with point counts.
@@ -399,4 +485,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     ingest_repo(args.repo, collection=args.collection, force=args.force, repo_name=args.name)
-    
