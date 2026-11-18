@@ -214,6 +214,8 @@ The project notes identify these API routes:
 | `/ingest/status` | Check ingestion status |
 | `/chat` | Ask a question |
 | `/chat/debug` | Inspect chat/debug information |
+| `/metrics` | Latency percentiles (p50/p95/p99) per pipeline stage |
+| `/metrics/reset` | Clear all recorded latency samples |
 | `/repos` | List ingested repositories |
 
 For interactive API documentation during local development, open **http://localhost:8010/docs**.
@@ -281,6 +283,24 @@ Evaluation date:       <date>
 ```
 
 Do not publish placeholder scores as measured results. A lower faithfulness score on answers intentionally generated from fallback sources may reflect that those answers are not grounded in the repository; interpret metrics in the context of the source path.
+
+### Latency benchmarking
+
+`eval/latency_benchmark.py` drives a set of questions against a running backend, reads the live percentiles back from `GET /metrics`, and writes a Markdown + JSON report to `eval/results/`. It exists so latency numbers are a reproducible artifact rather than something eyeballed in a browser.
+
+```bash
+# The target repo must already be ingested (see POST /ingest).
+python -m eval.latency_benchmark --repo support-ticket-ai --repeat 2
+python -m eval.latency_benchmark --repo KOT_AI --out my-baseline
+python -m eval.latency_benchmark --repo support-ticket-ai --question "Custom question?"
+```
+
+Each report records the per-stage p50/p95/p99 **together with the sample count** behind each percentile, so thin samples are visible rather than silently misleading. Percentiles are computed server-side over a rolling window of the last 500 samples per stage (`app/metrics.py`).
+
+Two things worth knowing when reading the output:
+
+- `retrieve_kb` excludes model initialization. The backend loads the embedding models in its FastAPI `lifespan` hook at startup, so the cold-start cost does not land in request metrics.
+- The LLM provider chain (`app/agent/llm_client.py`) tries Groq, then OpenRouter, then Gemini, and waits `RATE_LIMIT_RETRY_BACKOFF` (25 s) before one final retry. A stage that makes an LLM call therefore absorbs any provider failover, which is why `grade_web` can show multi-second figures while `web_search` stays fast.
 
 ---
 
