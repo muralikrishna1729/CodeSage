@@ -272,7 +272,7 @@ export function ChatWorkspace({
     const textarea = event.currentTarget;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const nextValue = input.slice(0, start) + "\\n" + input.slice(end);
+    const nextValue = input.slice(0, start) + "\n" + input.slice(end);
     setInput(nextValue);
   }
 
