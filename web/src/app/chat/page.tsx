@@ -90,7 +90,9 @@ function ChatEvidenceInspector({ evidence }: { evidence: LatestAnswer | null }) 
 export default function ChatPage() {
   const [latestAnswer, setLatestAnswer] = useState<LatestAnswer | null>(null);
   const handleAssistantAnswer = useCallback(
-    (answer: string, source: ChatSource) => setLatestAnswer({ answer, source }),
+    (answer: string | null, source: ChatSource | null) => {
+      setLatestAnswer(answer && source ? { answer, source } : null);
+    },
     [],
   );
 
@@ -99,7 +101,13 @@ export default function ChatPage() {
       activeSection="chat"
       inspectorContent={<ChatEvidenceInspector evidence={latestAnswer} />}
     >
-      <ChatWorkspace onAssistantAnswer={handleAssistantAnswer} />
+      {({ onOpenNavigation, onOpenInspector }) => (
+        <ChatWorkspace
+          onAssistantAnswer={handleAssistantAnswer}
+          onOpenNavigation={onOpenNavigation}
+          onOpenInspector={onOpenInspector}
+        />
+      )}
     </ApplicationShell>
   );
 }
