@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import "./globals.css";
 import { StoreProvider } from "@/components/providers/store-provider";
@@ -19,7 +20,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         />
       </head>
       <body className="min-h-screen antialiased">
-        <StoreProvider>{children}</StoreProvider>
+        <Suspense
+          fallback={
+            <div
+              className="flex min-h-screen items-center justify-center bg-[var(--background)] text-sm text-[var(--muted)]"
+              role="status"
+            >
+              Loading CodeSage workspace…
+            </div>
+          }
+        >
+          <StoreProvider>{children}</StoreProvider>
+        </Suspense>
       </body>
     </html>
   );
