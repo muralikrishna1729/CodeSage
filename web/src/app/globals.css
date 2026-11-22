@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --background: #10120f;
+  --foreground: #edeee8;
+  --surface: #171a16;
+  --surface-raised: #1d211c;
+  --surface-hover: #232820;
+  --muted: #9da39a;
+  --muted-strong: #bbc0b6;
+  --border: rgb(237 238 232 / 10%);
+  --border-strong: rgb(237 238 232 / 16%);
+  --primary: #a6cbb3;
+  --primary-strong: #bde0c8;
+  --primary-soft: rgb(166 203 179 / 10%);
+  --evidence: #d9b875;
+  --evidence-soft: rgb(217 184 117 / 10%);
+  --warning: #c98a67;
+  --warning-soft: rgb(201 138 103 / 10%);
+  --destructive: #d99084;
+  --destructive-soft: rgb(217 144 132 / 10%);
+  --focus: #a6cbb3;
+  --shadow: rgb(0 0 0 / 24%);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: Georgia, "Times New Roman", serif;
+  --font-mono: "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #f2efe5;
+  --foreground: #20231f;
+  --surface: #faf8ef;
+  --surface-raised: #fffdf6;
+  --surface-hover: #ebe7da;
+  --muted: #6d7168;
+  --muted-strong: #4d5249;
+  --border: rgb(32 35 31 / 12%);
+  --border-strong: rgb(32 35 31 / 20%);
+  --primary: #37664a;
+  --primary-strong: #285239;
+  --primary-soft: rgb(55 102 74 / 9%);
+  --evidence: #946d25;
+  --evidence-soft: rgb(148 109 37 / 10%);
+  --warning: #9a5c3d;
+  --warning-soft: rgb(154 92 61 / 10%);
+  --destructive: #a84f47;
+  --destructive-soft: rgb(168 79 71 / 9%);
+  --focus: #37664a;
+  --shadow: rgb(54 48 34 / 10%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 1.5rem;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Georgia, "Times New Roman", serif;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+::selection {
+  background: var(--primary-soft);
+  color: var(--foreground);
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.atlas-shell {
+  background:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px),
+    var(--background);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+.atlas-display {
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.035em;
+}
+
+.atlas-mono {
+  font-family: "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+}
