@@ -179,6 +179,8 @@ function getChatError(error: unknown): string {
 
 export function ChatWorkspace({
   onAssistantAnswer,
+  onOpenNavigation,
+  onOpenInspector,
 }: {
   onAssistantAnswer: (answer: string | null, source: ChatSource | null) => void;
   onOpenNavigation: () => void;
