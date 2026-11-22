@@ -4,34 +4,37 @@ import {
   Code2,
   Database,
   LayoutDashboard,
+  MessageSquare,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeControl } from "./theme-control";
-import type { DashboardResource, Repository } from "@/components/dashboard/dashboard-types";
+import type {
+  DashboardResource,
+  Repository,
+} from "@/components/dashboard/dashboard-types";
 import { Button } from "@/components/ui/primitives";
+
+export type WorkspaceSection = "overview" | "chat";
 
 const navigation: {
   label: string;
   href: string;
   icon: LucideIcon;
-  active?: boolean;
+  section?: WorkspaceSection;
 }[] = [
-  {
-    label: "Overview",
-    href: "#overview",
-    icon: LayoutDashboard,
-    active: true,
-  },
-  { label: "Repositories", href: "#repositories", icon: Database },
-  { label: "Metrics", href: "#metrics", icon: Activity },
+  { label: "Overview", href: "/", icon: LayoutDashboard, section: "overview" },
+  { label: "Chat", href: "/chat", icon: MessageSquare, section: "chat" },
+  { label: "Repositories", href: "/#repositories", icon: Database },
+  { label: "Metrics", href: "/#metrics", icon: Activity },
 ];
 
 export function AppSidebar({
   repositories,
   loading,
   activeRepository,
+  activeSection = "overview",
   onSelectRepository,
   onClose,
   drawer = false,
@@ -39,6 +42,7 @@ export function AppSidebar({
   repositories: DashboardResource<Repository[]> | null;
   loading: boolean;
   activeRepository: Repository | null;
+  activeSection?: WorkspaceSection;
   onSelectRepository: (repository: Repository) => void;
   onClose?: () => void;
   drawer?: boolean;
@@ -65,8 +69,9 @@ export function AppSidebar({
         </Button>
       )}
       <Link
-        href="#overview"
+        href="/"
         aria-label="CodeSage workspace home"
+        onClick={onClose}
         className="flex w-fit items-center gap-3 rounded-xl outline-none transition-opacity hover:opacity-80"
       >
         <span className="flex size-10 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--primary-soft)] text-[var(--primary)]">
@@ -95,27 +100,31 @@ export function AppSidebar({
         aria-label="Workspace navigation"
         className="mt-3 flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
       >
-        {navigation.map(({ label, href, icon: Icon, active }) => (
-          <Link
-            key={label}
-            href={href}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-none",
-              active
-                ? "bg-[var(--surface-hover)] text-[var(--foreground)]"
-                : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
-            )}
-          >
-            <Icon
-              aria-hidden="true"
-              size={17}
-              strokeWidth={1.8}
-              className={active ? "text-[var(--primary)]" : ""}
-            />
-            <span>{label}</span>
-          </Link>
-        ))}
+        {navigation.map(({ label, href, icon: Icon, section }) => {
+          const active = section === activeSection;
+          return (
+            <Link
+              key={label}
+              href={href}
+              aria-current={active ? "page" : undefined}
+              onClick={onClose}
+              className={cn(
+                "flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-none",
+                active
+                  ? "bg-[var(--surface-hover)] text-[var(--foreground)]"
+                  : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
+              )}
+            >
+              <Icon
+                aria-hidden="true"
+                size={17}
+                strokeWidth={1.8}
+                className={active ? "text-[var(--primary)]" : ""}
+              />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="mt-6 border-t border-[var(--border)] pt-5">
