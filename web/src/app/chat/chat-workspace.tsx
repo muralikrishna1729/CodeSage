@@ -260,10 +260,20 @@ export function ChatWorkspace({
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key !== "Enter") return;
+
+    if (!event.shiftKey) {
       event.preventDefault();
       void handleSubmit();
+      return;
     }
+
+    event.preventDefault();
+    const textarea = event.currentTarget;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const nextValue = input.slice(0, start) + "\\n" + input.slice(end);
+    setInput(nextValue);
   }
 
   const canSubmit = Boolean(activeRepository && input.trim() && !loading);
