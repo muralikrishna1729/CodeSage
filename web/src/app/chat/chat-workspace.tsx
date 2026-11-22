@@ -204,6 +204,7 @@ export function ChatWorkspace({
     const previousRepository = previousRepositoryRef.current;
     if (previousRepository && previousRepository !== currentRepository) {
       setMessages([]);
+      setInput("");
       setError(null);
       onAssistantAnswer(null, null);
     }
@@ -323,6 +324,7 @@ export function ChatWorkspace({
                 if (selected) dispatch(selectRepository(selected.repo_name));
                 else dispatch(clearRepository());
                 setMessages([]);
+                setInput("");
                 setError(null);
                 onAssistantAnswer(null, null);
               }}
