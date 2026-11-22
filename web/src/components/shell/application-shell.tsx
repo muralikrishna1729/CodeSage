@@ -1,13 +1,17 @@
-﻿"use client";
+"use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { FileSearch, X } from "lucide-react";
-import { AppSidebar } from "./app-sidebar";
+import { AppSidebar, type WorkspaceSection } from "./app-sidebar";
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { selectRepository } from "@/lib/features/repository/repositorySlice";
-import { selectActiveRepository, selectRepositories } from "@/lib/features/repository/repositorySelectors";
-import { codesageApi, useGetMetricsQuery, useGetRepositoriesQuery } from "@/lib/services/codesageApi";
+import { selectActiveRepository } from "@/lib/features/repository/repositorySelectors";
+import {
+  codesageApi,
+  useGetMetricsQuery,
+  useGetRepositoriesQuery,
+} from "@/lib/services/codesageApi";
 import type {
   ConnectionState,
   DashboardResource,
@@ -16,93 +20,6 @@ import type {
 } from "@/components/dashboard/dashboard-types";
 import { Button } from "@/components/ui/primitives";
 
-type DashboardPayload<T> =
-  | { status: "success"; data: T }
-  | { status: "error"; code: string; httpStatus: number };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseMetrics(value: unknown): LatencyMetric[] | null {
-  if (!isRecord(value) || !Array.isArray(value.latency)) {
-    return null;
-  }
-  const metrics: LatencyMetric[] = [];
-  for (const item of value.latency) {
-    if (
-      !isRecord(item) ||
-      typeof item.stage !== "string" ||
-      typeof item.count !== "number" ||
-      !Number.isFinite(item.count) ||
-      typeof item.p50_ms !== "number" ||
-      !Number.isFinite(item.p50_ms) ||
-      typeof item.p95_ms !== "number" ||
-      !Number.isFinite(item.p95_ms) ||
-      typeof item.p99_ms !== "number" ||
-      !Number.isFinite(item.p99_ms)
-    ) {
-      return null;
-    }
-    metrics.push({
-      stage: item.stage,
-      count: item.count,
-      p50_ms: item.p50_ms,
-      p95_ms: item.p95_ms,
-      p99_ms: item.p99_ms,
-    });
-  }
-  return metrics;
-}
-
-function responseErrorCode(value: unknown, status: number): string {
-  if (isRecord(value) && typeof value.error === "string") {
-    return value.error;
-  }
-  if (status === 504) return "UPSTREAM_TIMEOUT";
-  if (status === 502) return "UPSTREAM_UNAVAILABLE";
-  return "UPSTREAM_REQUEST_FAILED";
-}
-
-async function loadResource<T>(
-  path: string,
-  parse: (value: unknown) => T | null,
-): Promise<DashboardPayload<T>> {
-  try {
-    const response = await fetch(path, {
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    if (!response.ok) {
-      return {
-        status: "error",
-        code: responseErrorCode(payload, response.status),
-        httpStatus: response.status,
-      };
-    }
-    const data = parse(payload);
-    return data
-      ? { status: "success", data }
-      : {
-          status: "error",
-          code: "INVALID_BACKEND_RESPONSE",
-          httpStatus: response.status,
-        };
-  } catch {
-    return {
-      status: "error",
-      code: "BFF_UNAVAILABLE",
-      httpStatus: 0,
-    };
-  }
-}
-
 function deriveConnection(
   repositories: DashboardResource<Repository[]> | null,
   metrics: DashboardResource<LatencyMetric[]> | null,
@@ -110,12 +27,10 @@ function deriveConnection(
 ): ConnectionState {
   if (loading && !repositories && !metrics) return "checking";
   const resources = [repositories, metrics];
-  const codes: string[] = [];
-  for (const resource of resources) {
-    if (resource?.status === "error") {
-      codes.push(resource.code);
-    }
-  }
+  const codes = resources.flatMap((resource) =>
+    resource?.status === "error" ? [resource.code] : [],
+  );
+
   if (codes.includes("BFF_DISABLED")) return "disabled";
   if (
     codes.some((code) =>
@@ -133,12 +48,21 @@ function deriveConnection(
     : "checking";
 }
 
-export function ApplicationShell() {
+export function ApplicationShell({
+  children,
+  activeSection = "overview",
+  inspectorContent,
+}: {
+  children?: ReactNode;
+  activeSection?: WorkspaceSection;
+  inspectorContent?: ReactNode;
+}) {
   const dispatch = useAppDispatch();
-  const repositories = useAppSelector(selectRepositories);
   const activeRepository = useAppSelector(selectActiveRepository);
   const repositoryQuery = useGetRepositoriesQuery();
-  const metricsQuery = useGetMetricsQuery();
+  const metricsQuery = useGetMetricsQuery(undefined, {
+    skip: activeSection === "chat",
+  });
 
   const repositoriesResource: DashboardResource<Repository[]> | null =
     repositoryQuery.data
@@ -154,7 +78,9 @@ export function ApplicationShell() {
         ? { status: "error", code: "UPSTREAM_REQUEST_FAILED", httpStatus: 0 }
         : null;
 
-  const loading = repositoryQuery.isLoading || metricsQuery.isLoading;
+  const loading =
+    repositoryQuery.isLoading ||
+    (activeSection === "overview" && metricsQuery.isLoading);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
 
@@ -179,39 +105,54 @@ export function ApplicationShell() {
     dispatch(codesageApi.util.invalidateTags(["Repositories", "Metrics"]));
   }, [dispatch]);
 
-  const isLoading = loading;
-  const connection = deriveConnection(repositoriesResource, metricsResource, isLoading);
+  const connection = deriveConnection(
+    repositoriesResource,
+    metricsResource,
+    loading,
+  );
+
+  const sidebar = (
+    <AppSidebar
+      repositories={repositoriesResource}
+      loading={loading}
+      activeRepository={activeRepository}
+      activeSection={activeSection}
+      onSelectRepository={(repository) => {
+        dispatch(selectRepository(repository.repo_name));
+        setNavigationOpen(false);
+      }}
+    />
+  );
 
   return (
     <div className="atlas-shell min-h-screen text-[var(--foreground)]">
       <div className="grid min-h-screen grid-cols-1 xl:grid-cols-[244px_minmax(0,1fr)_260px] 2xl:grid-cols-[252px_minmax(0,1fr)_280px]">
-        <AppSidebar
-          repositories={repositoriesResource}
-          loading={isLoading}
-          activeRepository={activeRepository}
-          onSelectRepository={(repository) => {
-            dispatch(selectRepository(repository.repo_name));
-            setNavigationOpen(false);
-          }}
-        />
+        {sidebar}
 
-        <DashboardOverview
-          repositories={repositoriesResource}
-          metrics={metricsResource}
-          loading={isLoading}
-          connection={connection}
-          onRefresh={refresh}
-          onOpenNavigation={() => setNavigationOpen(true)}
-          onOpenInspector={() => setInspectorOpen(true)}
-          activeRepository={activeRepository}
-          onRefreshRepositories={refresh}
-        />
+        {children ?? (
+          <DashboardOverview
+            repositories={repositoriesResource}
+            metrics={metricsResource}
+            loading={loading}
+            connection={connection}
+            onRefresh={refresh}
+            onOpenNavigation={() => setNavigationOpen(true)}
+            onOpenInspector={() => setInspectorOpen(true)}
+            activeRepository={activeRepository}
+            onRefreshRepositories={refresh}
+          />
+        )}
 
         <aside
           aria-label="Contextual inspector"
           className="sticky top-0 hidden h-screen flex-col border-l border-[var(--border)] bg-[var(--surface)] px-4 py-5 xl:flex"
         >
-          <InspectorContent />
+          <InspectorContent
+            activeRepository={activeRepository}
+            activeSection={activeSection}
+          >
+            {inspectorContent}
+          </InspectorContent>
         </aside>
       </div>
 
@@ -225,6 +166,7 @@ export function ApplicationShell() {
             repositories={repositoriesResource}
             loading={loading}
             activeRepository={activeRepository}
+            activeSection={activeSection}
             onSelectRepository={(repository) => {
               dispatch(selectRepository(repository.repo_name));
               setNavigationOpen(false);
@@ -251,7 +193,12 @@ export function ApplicationShell() {
             >
               <X aria-hidden="true" size={15} />
             </Button>
-            <InspectorContent />
+            <InspectorContent
+              activeRepository={activeRepository}
+              activeSection={activeSection}
+            >
+              {inspectorContent}
+            </InspectorContent>
           </aside>
         </DrawerBackdrop>
       )}
@@ -259,36 +206,60 @@ export function ApplicationShell() {
   );
 }
 
-function InspectorContent() {
+function InspectorContent({
+  activeRepository,
+  activeSection,
+  children,
+}: {
+  activeRepository: Repository | null;
+  activeSection: WorkspaceSection;
+  children?: ReactNode;
+}) {
   return (
     <>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-            Context
+            {activeSection === "chat" ? "Codebase context" : "Context"}
           </p>
           <h2 className="atlas-display mt-2 text-base font-semibold text-[var(--foreground)]">
-            Inspector
+            {activeSection === "chat" ? "Chat inspector" : "Inspector"}
           </h2>
         </div>
         <span className="flex size-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--muted)]">
           <FileSearch aria-hidden="true" size={15} />
         </span>
       </div>
-      <div className="mt-5 flex min-h-44 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-raised)] px-4 text-center">
-        <FileSearch
-          aria-hidden="true"
-          size={20}
-          className="text-[var(--muted)]"
-        />
-        <p className="mt-3 text-sm font-medium text-[var(--foreground)]">
-          Nothing selected
-        </p>
-        <p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">
-          Structured source evidence and file context will appear here in a
-          later stage.
-        </p>
-      </div>
+
+      {activeRepository ? (
+        <div className="mt-5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-raised)] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+            Active repository
+          </p>
+          <p className="atlas-mono mt-2 break-all text-xs font-medium text-[var(--foreground)]">
+            {activeRepository.repo_name}
+          </p>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            {activeRepository.points.toLocaleString()} indexed points
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-raised)] px-4 text-center">
+          <FileSearch
+            aria-hidden="true"
+            size={20}
+            className="text-[var(--muted)]"
+          />
+          <p className="mt-3 text-sm font-medium text-[var(--foreground)]">
+            No repository selected
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">
+            Select an indexed repository to establish codebase context.
+          </p>
+        </div>
+      )}
+
+      {children}
     </>
   );
 }
@@ -318,5 +289,3 @@ function DrawerBackdrop({
     </div>
   );
 }
-
-
