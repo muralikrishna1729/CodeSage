@@ -20,6 +20,11 @@ import type {
 } from "@/components/dashboard/dashboard-types";
 import { Button } from "@/components/ui/primitives";
 
+type WorkspaceControls = {
+  onOpenNavigation: () => void;
+  onOpenInspector: () => void;
+};
+
 function deriveConnection(
   repositories: DashboardResource<Repository[]> | null,
   metrics: DashboardResource<LatencyMetric[]> | null,
@@ -53,7 +58,7 @@ export function ApplicationShell({
   activeSection = "overview",
   inspectorContent,
 }: {
-  children?: ReactNode;
+  children?: ReactNode | ((controls: WorkspaceControls) => ReactNode);
   activeSection?: WorkspaceSection;
   inspectorContent?: ReactNode;
 }) {
@@ -104,6 +109,8 @@ export function ApplicationShell({
   const refresh = useCallback(() => {
     dispatch(codesageApi.util.invalidateTags(["Repositories", "Metrics"]));
   }, [dispatch]);
+  const onOpenNavigation = useCallback(() => setNavigationOpen(true), []);
+  const onOpenInspector = useCallback(() => setInspectorOpen(true), []);
 
   const connection = deriveConnection(
     repositoriesResource,
@@ -129,19 +136,21 @@ export function ApplicationShell({
       <div className="grid min-h-screen grid-cols-1 xl:grid-cols-[244px_minmax(0,1fr)_260px] 2xl:grid-cols-[252px_minmax(0,1fr)_280px]">
         {sidebar}
 
-        {children ?? (
-          <DashboardOverview
-            repositories={repositoriesResource}
-            metrics={metricsResource}
-            loading={loading}
-            connection={connection}
-            onRefresh={refresh}
-            onOpenNavigation={() => setNavigationOpen(true)}
-            onOpenInspector={() => setInspectorOpen(true)}
-            activeRepository={activeRepository}
-            onRefreshRepositories={refresh}
-          />
-        )}
+        {typeof children === "function"
+          ? children({ onOpenNavigation, onOpenInspector })
+          : children ?? (
+              <DashboardOverview
+                repositories={repositoriesResource}
+                metrics={metricsResource}
+                loading={loading}
+                connection={connection}
+                onRefresh={refresh}
+                onOpenNavigation={onOpenNavigation}
+                onOpenInspector={onOpenInspector}
+                activeRepository={activeRepository}
+                onRefreshRepositories={refresh}
+              />
+            )}
 
         <aside
           aria-label="Contextual inspector"
