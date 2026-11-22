@@ -195,6 +195,18 @@ export function ChatWorkspace({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const conversationRef = useRef<HTMLDivElement>(null);
+  const previousRepositoryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentRepository = activeRepository?.repo_name ?? null;
+    const previousRepository = previousRepositoryRef.current;
+    if (previousRepository && previousRepository !== currentRepository) {
+      setMessages([]);
+      setError(null);
+      onAssistantAnswer(null, null);
+    }
+    previousRepositoryRef.current = currentRepository;
+  }, [activeRepository?.repo_name, onAssistantAnswer]);
 
   useEffect(() => {
     const conversation = conversationRef.current;
