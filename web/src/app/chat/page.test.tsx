@@ -58,9 +58,8 @@ async function renderChatPage({
     codesageApi.util.upsertQueryData("getRepositories", undefined, initialRepositories)
   );
 
-  // Select the initially active repository only when explicitly provided.
-  // Do not automatically select the first repository — preserve the
-  // default unselected-repository scenario.
+  // Preserve an explicit selection for tests; the shared workspace shell
+  // automatically selects the first indexed repository on direct entry.
   if (initialActiveRepository) {
     await store.dispatch(selectRepository(initialActiveRepository.repo_name));
   }
@@ -143,24 +142,29 @@ describe("ChatPage", () => {
   });
 
   describe("Repository selection", () => {
-    it("shows repository selector even when no repository is selected", async () => {
+    it("automatically selects the first indexed repository on direct entry", async () => {
       await renderChatPage({ initialActiveRepository: null });
-      expect(
-        screen.getByText(/no repository selected/i)
-      ).toBeInTheDocument();
       const select = screen.getByTestId("repository-select");
-      expect(select).toBeInTheDocument();
+      await waitFor(() => expect(select).toHaveValue("owner/repo-a"));
+      expect(screen.getByText(/active: owner\\/repo-a/i)).toBeInTheDocument();
     });
 
-    it("selects a repository and enables input", async () => {
+    it("allows switching the active repository and enables input", async () => {
       await renderChatPage({ initialActiveRepository: null });
       const select = screen.getByTestId("repository-select");
-      fireEvent.change(select, { target: { value: "owner/repo-a" } });
+      await waitFor(() => expect(select).toHaveValue("owner/repo-a"));
+      fireEvent.change(select, { target: { value: "owner/repo-b" } });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "some question" } });
       const submitBtn = screen.getByRole("button", { name: /submit/i });
       expect(submitBtn).not.toBeDisabled();
-      expect(screen.getByText(/active: owner\/repo-a/i)).toBeInTheDocument();
+      expect(screen.getByText(/active: owner\\/repo-b/i)).toBeInTheDocument();
+    });
+
+    it("keeps chat disabled when no repositories are indexed", async () => {
+      await renderChatPage({ initialRepositories: [], initialActiveRepository: null });
+      expect(screen.getByTestId("repository-select")).toHaveValue("");
+      expect(screen.getByPlaceholderText(/ask a question/i)).toBeDisabled();
     });
   });
 
