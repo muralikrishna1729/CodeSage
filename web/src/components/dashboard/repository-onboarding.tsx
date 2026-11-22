@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GitBranch, LoaderCircle, Plus, RefreshCw } from "lucide-react";
 import { Button, Surface } from "@/components/ui/primitives";
 import {
-  codesageApi,
   useGetIngestionStatusQuery,
   useStartIngestionMutation,
   type IngestStatus,
@@ -70,6 +69,7 @@ export function RepositoryOnboarding({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [pollError, setPollError] = useState(false);
+  const completedJobRef = useRef<string | null>(null);
 
   const [startIngestion] = useStartIngestionMutation();
   const jobId = job?.job_id ?? "";
@@ -82,8 +82,10 @@ export function RepositoryOnboarding({
     if (!jobId || !statusData) return;
 
     if (statusData.status === "done") {
-      codesageApi.util.invalidateTags(["Repositories"]);
-      onComplete();
+      if (completedJobRef.current !== jobId) {
+        completedJobRef.current = jobId;
+        onComplete();
+      }
       return;
     }
 
