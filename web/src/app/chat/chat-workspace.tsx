@@ -214,10 +214,7 @@ export function ChatWorkspace({
   useEffect(() => {
     const conversation = conversationRef.current;
     if (conversation) {
-      conversation.scrollTo({
-        top: conversation.scrollHeight,
-        behavior: "smooth",
-      });
+      conversation.scrollTop = conversation.scrollHeight;
     }
   }, [messages, loading]);
 
@@ -355,7 +352,7 @@ export function ChatWorkspace({
             role="log"
             aria-label="Conversation"
             aria-live="polite"
-            className="min-h-0 flex-1 overflow-y-auto py-5 sm:py-7"
+            className="min-h-0 flex-1 overflow-y-auto scroll-smooth py-5 sm:py-7"
           >
             {messages.length === 0 && !loading ? (
               <div className="mx-auto flex min-h-full max-w-2xl flex-col justify-center py-8">
