@@ -146,7 +146,7 @@ describe("ChatPage", () => {
       await renderChatPage({ initialActiveRepository: null });
       const select = screen.getByTestId("repository-select");
       await waitFor(() => expect(select).toHaveValue("owner/repo-a"));
-      expect(screen.getByText(/active: owner\\/repo-a/i)).toBeInTheDocument();
+      expect(screen.getByText(/active: owner\/repo-a/i)).toBeInTheDocument();
     });
 
     it("allows switching the active repository and enables input", async () => {
@@ -158,7 +158,7 @@ describe("ChatPage", () => {
       fireEvent.change(textarea, { target: { value: "some question" } });
       const submitBtn = screen.getByRole("button", { name: /submit/i });
       expect(submitBtn).not.toBeDisabled();
-      expect(screen.getByText(/active: owner\\/repo-b/i)).toBeInTheDocument();
+      expect(screen.getByText(/active: owner\/repo-b/i)).toBeInTheDocument();
     });
 
     it("keeps chat disabled when no repositories are indexed", async () => {
