@@ -7,7 +7,9 @@ import {
   Bot,
   Copy,
   LoaderCircle,
+  Menu,
   MessageSquare,
+  PanelRight,
   Sparkles,
   UserRound,
 } from "lucide-react";
@@ -178,7 +180,9 @@ function getChatError(error: unknown): string {
 export function ChatWorkspace({
   onAssistantAnswer,
 }: {
-  onAssistantAnswer: (answer: string, source: ChatSource) => void;
+  onAssistantAnswer: (answer: string | null, source: ChatSource | null) => void;
+  onOpenNavigation: () => void;
+  onOpenInspector: () => void;
 }) {
   const dispatch = useAppDispatch();
   const repositories = useAppSelector(selectRepositories);
@@ -257,7 +261,24 @@ export function ChatWorkspace({
     <main className="flex min-h-screen min-w-0 flex-1 flex-col">
       <div className="mx-auto flex h-screen max-h-screen w-full max-w-[1120px] min-w-0 flex-col px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex shrink-0 gap-1 xl:hidden">
+              <Button
+                onClick={onOpenNavigation}
+                aria-label="Open repository navigation"
+                className="size-9 px-0"
+              >
+                <Menu size={15} aria-hidden="true" />
+              </Button>
+              <Button
+                onClick={onOpenInspector}
+                aria-label="Open contextual inspector"
+                className="size-9 px-0"
+              >
+                <PanelRight size={15} aria-hidden="true" />
+              </Button>
+            </div>
+            <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--primary)]">
               Code intelligence workspace
             </p>
@@ -267,6 +288,7 @@ export function ChatWorkspace({
             <p className="mt-1.5 text-xs leading-relaxed text-[var(--muted)] sm:text-sm">
               Ask questions. Trace execution. Understand unfamiliar code.
             </p>
+            </div>
           </div>
 
           <div className="w-full sm:max-w-[270px]">
@@ -288,6 +310,7 @@ export function ChatWorkspace({
                 else dispatch(clearRepository());
                 setMessages([]);
                 setError(null);
+                onAssistantAnswer(null, null);
               }}
               disabled={repositoryLoading || repositories.length === 0}
               className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-xs text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)] disabled:opacity-60"
