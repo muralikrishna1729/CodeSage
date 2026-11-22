@@ -7,7 +7,7 @@ import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { selectRepository } from "@/lib/features/repository/repositorySlice";
 import { selectActiveRepository, selectRepositories } from "@/lib/features/repository/repositorySelectors";
-import { useGetMetricsQuery, useGetRepositoriesQuery } from "@/lib/services/codesageApi";
+import { codesageApi, useGetMetricsQuery, useGetRepositoriesQuery } from "@/lib/services/codesageApi";
 import type {
   ConnectionState,
   DashboardResource,
@@ -176,9 +176,8 @@ export function ApplicationShell() {
   }, []);
 
   const refresh = useCallback(() => {
-    void repositoryQuery.refetch();
-    void metricsQuery.refetch();
-  }, [metricsQuery, repositoryQuery]);
+    dispatch(codesageApi.util.invalidateTags(["Repositories", "Metrics"]));
+  }, [dispatch]);
 
   const isLoading = loading;
   const connection = deriveConnection(repositoriesResource, metricsResource, isLoading);
