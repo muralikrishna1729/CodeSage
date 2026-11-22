@@ -16,7 +16,32 @@ const mockChatResponse = {
   source: "kb" as const,
 };
 
+const successfulChatHandler = async () =>
+  new Response(JSON.stringify(mockChatResponse), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+
 type FetchMock = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+const NativeRequest = globalThis.Request;
+
+class RelativeRequest extends NativeRequest {
+  constructor(input: RequestInfo | URL, init?: RequestInit) {
+    super(
+      input instanceof NativeRequest
+        ? input
+        : new URL(input.toString(), window.location.origin),
+      init
+    );
+  }
+}
+
+function asRequest(input: RequestInfo | URL, init?: RequestInit): Request {
+  return input instanceof Request
+    ? input.clone()
+    : new Request(input, init);
+}
 
 async function renderChatPage({
   initialRepositories = mockRepos,
@@ -29,7 +54,7 @@ async function renderChatPage({
 
   // Seed the repository query cache using upsertQueryData because the
   // cache entry may not exist yet when using a fresh store.
-  store.dispatch(
+  await store.dispatch(
     codesageApi.util.upsertQueryData("getRepositories", undefined, initialRepositories)
   );
 
@@ -37,7 +62,7 @@ async function renderChatPage({
   // Do not automatically select the first repository — preserve the
   // default unselected-repository scenario.
   if (initialActiveRepository) {
-    store.dispatch(selectRepository(initialActiveRepository.repo_name));
+    await store.dispatch(selectRepository(initialActiveRepository.repo_name));
   }
 
   return render(
@@ -50,25 +75,19 @@ async function renderChatPage({
 describe("ChatPage", () => {
   const fetchMock = vi.fn();
 
-  // Chat response queue - each test configures its own sequence
+  // Chat response queue - individual tests configure special sequences
   let chatResponseQueue: Array<() => Promise<Response>> = [];
 
   beforeEach(() => {
     fetchMock.mockReset();
-    // Default queue with one successful chat response
-    chatResponseQueue = [
-      async () =>
-        new Response(JSON.stringify(mockChatResponse), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-    ];
+    vi.stubGlobal("Request", RelativeRequest);
+    chatResponseQueue = [successfulChatHandler];
 
     // Route-aware fetch mock:
     // - GET /api/codesage/repos → always return mockRepos (never touches queue)
     // - POST /api/codesage/chat → consume from chat response queue
-    fetchMock.mockImplementation(async (input: RequestInfo) => {
-      const request = new Request(input);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = asRequest(input, init);
       const url = new URL(request.url);
       const method = request.method.toUpperCase();
 
@@ -96,6 +115,7 @@ describe("ChatPage", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe("Page rendering", () => {
@@ -132,8 +152,8 @@ describe("ChatPage", () => {
       expect(select).toBeInTheDocument();
     });
 
-    it("selects a repository and enables input", () => {
-      renderChatPage({ initialActiveRepository: null });
+    it("selects a repository and enables input", async () => {
+      await renderChatPage({ initialActiveRepository: null });
       const select = screen.getByTestId("repository-select");
       fireEvent.change(select, { target: { value: "owner/repo-a" } });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
@@ -146,7 +166,7 @@ describe("ChatPage", () => {
 
   describe("Empty question", () => {
     it("does not submit when question is empty", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const submitBtn = screen.getByRole("button", { name: /submit/i });
       fireEvent.click(submitBtn);
       await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
@@ -155,7 +175,7 @@ describe("ChatPage", () => {
 
   describe("Successful question submission", () => {
     it("submits a question and renders assistant response", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "What is this?" } });
       const submitBtn = screen.getByRole("button", { name: /submit/i });
@@ -170,7 +190,7 @@ describe("ChatPage", () => {
     });
 
     it("renders the assistant answer", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "Hello" } });
       fireEvent.click(screen.getByRole("button", { name: /submit/i }));
@@ -182,17 +202,25 @@ describe("ChatPage", () => {
 
   describe("Exact BFF request payload", () => {
     it("sends the exact request body to /api/codesage/chat", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "How do I build?" } });
       fireEvent.click(screen.getByRole("button", { name: /submit/i }));
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-      const [url, options] = fetchMock.mock.calls[0];
-      expect(url).toBe("/api/codesage/chat");
-      expect(options.method).toBe("POST");
-      expect(options.headers["Content-Type"]).toBe("application/json");
-      const body = JSON.parse(options.body as string);
+      const chatRequests = fetchMock.mock.calls
+        .map(([input, init]) => asRequest(input, init))
+        .filter((request) => {
+          const url = new URL(request.url);
+
+          return (
+            request.method === "POST" &&
+            url.pathname === "/api/codesage/chat"
+          );
+        });
+      expect(chatRequests).toHaveLength(1);
+      expect(chatRequests[0].headers.get("Content-Type")).toBe("application/json");
+      const body = await chatRequests[0].clone().json();
       expect(body).toEqual({
         question: "How do I build?",
         repo_name: "owner/repo-a",
@@ -203,19 +231,30 @@ describe("ChatPage", () => {
 
   describe("Correct repository name in request", () => {
     it("uses the selected repository name in the request", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[1] });
+      await renderChatPage({ initialActiveRepository: mockRepos[1] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "Question for repo-b" } });
       fireEvent.click(screen.getByRole("button", { name: /submit/i }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      const chatRequests = fetchMock.mock.calls
+        .map(([input, init]) => asRequest(input, init))
+        .filter((request) => {
+          const url = new URL(request.url);
+
+          return (
+            request.method === "POST" &&
+            url.pathname === "/api/codesage/chat"
+          );
+        });
+      const body = await chatRequests[0].clone().json();
       expect(body.repo_name).toBe("owner/repo-b");
     });
   });
 
   describe("Previous conversation history", () => {
     it("includes previous conversation history in the request", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      chatResponseQueue = [successfulChatHandler, successfulChatHandler];
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       const submitBtn = screen.getByRole("button", { name: /submit/i });
 
@@ -231,7 +270,17 @@ describe("ChatPage", () => {
       fireEvent.click(submitBtn);
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
-      const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+      const chatRequests = fetchMock.mock.calls
+        .map(([input, init]) => asRequest(input, init))
+        .filter((request) => {
+          const url = new URL(request.url);
+
+          return (
+            request.method === "POST" &&
+            url.pathname === "/api/codesage/chat"
+          );
+        });
+      const secondBody = await chatRequests[1].clone().json();
       expect(secondBody.history).toEqual([
         { role: "user", content: "First question" },
         { role: "assistant", content: "This is the assistant answer." },
@@ -241,7 +290,7 @@ describe("ChatPage", () => {
 
   describe("Source category rendering", () => {
     it("renders the source category of the assistant answer", async () => {
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "What is the source?" } });
       fireEvent.click(screen.getByRole("button", { name: /submit/i }));
@@ -257,9 +306,9 @@ describe("ChatPage", () => {
       const deferred = new Promise<Response>((res) => {
         resolveFetch = res;
       });
-      fetchMock.mockReturnValue(deferred);
+      chatResponseQueue = [() => deferred];
 
-      renderChatPage({ initialActiveRepository: mockRepos[0] });
+      await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "Loading test" } });
       const submitBtn = screen.getByRole("button", { name: /submit/i });
@@ -287,32 +336,34 @@ describe("ChatPage", () => {
 
   describe("API error", () => {
     it("shows an error message when the BFF returns an error", async () => {
-      fetchMock.mockResolvedValue(
-        new Response(JSON.stringify({ error: "bad request" }), {
-          status: 400,
-          statusText: "Bad Request",
-        })
-      );
+      chatResponseQueue = [
+        async () =>
+          new Response(JSON.stringify({ error: "bad request" }), {
+            status: 400,
+            statusText: "Bad Request",
+          }),
+      ];
       await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "Bad question" } });
       fireEvent.click(screen.getByRole("button", { name: /submit/i }));
-      await waitFor(
-        expect(screen.getByRole("alert")).toBeInTheDocument()
-      );
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
     });
   });
 
   describe("Network error", () => {
     it("shows an error message when the network request fails", async () => {
-      // Only reject the chat POST, not the repository GET
-      fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      chatResponseQueue = [
+        async () => {
+          throw new TypeError("Failed to fetch");
+        },
+      ];
       await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
       fireEvent.change(textarea, { target: { value: "Network question" } });
       fireEvent.click(screen.getByRole("button", { name: /submit/i }));
       // Use findByRole for automatic waiting - it will retry until the element appears
-      const alert = await screen.findByRole("alert", { selector: undefined });
+      const alert = await screen.findByRole("alert");
       expect(alert).toBeInTheDocument();
     });
   });
@@ -328,13 +379,19 @@ describe("ChatPage", () => {
         expect(screen.getByText(/Enter submit/)).toBeInTheDocument()
       );
       // Verify exactly one POST /api/codesage/chat was made
-      const chatRequests = fetchMock.mock.calls.filter(
-        ([input]) => new Request(input).method === "POST" && new Request(input).url.includes("/api/codesage/chat")
-      );
+      const chatRequests = fetchMock.mock.calls
+        .map(([input, init]) => asRequest(input, init))
+        .filter((request) => {
+          const url = new URL(request.url);
+
+          return (
+            request.method === "POST" &&
+            url.pathname === "/api/codesage/chat"
+          );
+        });
       expect(chatRequests).toHaveLength(1);
       // Verify the request body contains the question and repository
-      const [, init] = chatRequests[0];
-      const body = JSON.parse(init.body);
+      const body = await chatRequests[0].clone().json();
       expect(body.question).toBe("Enter submit");
       expect(body.repo_name).toBe(mockRepos[0].repo_name);
     });
@@ -348,21 +405,19 @@ describe("ChatPage", () => {
       expect(textarea).toHaveValue("line one\n");
       // No assistant answer should appear since no submit occurred
       // Use queryByRole for negative DOM assertions - returns null if not found
-      const alert = screen.queryByRole("alert", { selector: undefined });
+      const alert = screen.queryByRole("alert");
       expect(alert).not.toBeInTheDocument();
     });
   });
 
   describe("Retry without duplicate user messages", () => {
     it("retries after an error without duplicating the user message", async () => {
-      fetchMock
-        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
-        .mockResolvedValue(
-          new Response(JSON.stringify(mockChatResponse), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
-        );
+      chatResponseQueue = [
+        async () => {
+          throw new TypeError("Failed to fetch");
+        },
+        successfulChatHandler,
+      ];
 
       await renderChatPage({ initialActiveRepository: mockRepos[0] });
       const textarea = screen.getByPlaceholderText(/ask a question/i);
