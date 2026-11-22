@@ -5,8 +5,6 @@ import type { ReactNode, FormEvent, KeyboardEvent } from "react";
 import {
   ArrowUp,
   Bot,
-  Check,
-  Code2,
   Copy,
   LoaderCircle,
   MessageSquare,
@@ -30,13 +28,6 @@ type ChatMessage = {
   source?: ChatResponse["source"];
 };
 
-const sourceLabels: Record<ChatSource, string> = {
-  kb: "Codebase",
-  web: "Web search",
-  direct: "Direct answer",
-  fallback: "Fallback",
-};
-
 const suggestedQuestions = [
   "How is the API structured?",
   "Trace the repository ingestion flow",
@@ -52,7 +43,7 @@ function copyText(value: string): void {
 function renderInlineMarkdown(value: string): ReactNode[] {
   const delimiter = String.fromCharCode(96);
   const pattern = new RegExp(
-    "(" + delimiter + "[^" + delimiter + "]+" + delimiter + "|\\\\*\\\\*[^*]+\\\\*\\\\*)",
+    "(" + delimiter + "[^" + delimiter + "]+" + delimiter + "|\\*\\*[^*]+\\*\\*)",
     "g",
   );
 
