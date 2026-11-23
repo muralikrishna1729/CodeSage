@@ -41,13 +41,21 @@ def _relevant_ranked_indices(
     retrieved: list[Mapping[str, Any]],
     relevant_items: list[Mapping[str, Any]],
 ) -> list[int]:
-    """Return 1-based ranks of the first retrieved match for each expected item."""
+    """Return ranks of unique retrieved results matched to labelled items.
+
+    Matching is one-to-one: a single retrieved chunk cannot satisfy multiple
+    expected labels, and duplicate chunks cannot inflate precision or recall.
+    """
+    unmatched = list(relevant_items)
     ranks: list[int] = []
-    for expected in relevant_items:
-        for rank, result in enumerate(retrieved, start=1):
-            if _matches(result, expected):
-                ranks.append(rank)
-                break
+    for rank, result in enumerate(retrieved, start=1):
+        match_index = next(
+            (i for i, expected in enumerate(unmatched) if _matches(result, expected)),
+            None,
+        )
+        if match_index is not None:
+            ranks.append(rank)
+            unmatched.pop(match_index)
     return ranks
 
 
@@ -59,8 +67,8 @@ def retrieval_metrics(
     """Calculate Recall@K, Precision@K, and Reciprocal Rank.
 
     Precision@K uses K as its denominator, even when fewer than K results are
-    returned. Recall@K uses the number of labelled relevant items. Duplicate
-    retrieved chunks can only satisfy a given labelled item once.
+    returned. Recall@K uses the number of labelled relevant items. Each
+    retrieved result can satisfy at most one labelled relevant item.
     """
     if k < 1:
         raise ValueError("k must be at least 1")
@@ -76,11 +84,11 @@ def retrieval_metrics(
             "relevant_total": 0,
         }
 
-    ranks = _relevant_ranked_indices(results[:k], expected)
-    # MRR is computed against the full retrieved ranking, not just the cutoff.
+    ranks_at_k = _relevant_ranked_indices(results[:k], expected)
+    # MRR uses the first relevant result in the complete returned ranking.
     all_ranks = _relevant_ranked_indices(results, expected)
     first_relevant_rank = min(all_ranks, default=None)
-    relevant_retrieved = len(ranks)
+    relevant_retrieved = len(ranks_at_k)
 
     return {
         "recall_at_k": relevant_retrieved / len(expected),
